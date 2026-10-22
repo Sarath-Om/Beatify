@@ -67,6 +67,10 @@ import com.example.data.PlaybackState
 import com.example.data.PlaylistEntity
 import com.example.data.TrackEntity
 import com.example.ui.theme.ElevatedSurface
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.Radio
+import com.example.ui.theme.BeatifyAppleCrimson
 import com.example.ui.theme.HighlightFavoritePink
 import com.example.ui.theme.LabelPrimary
 import com.example.ui.theme.MainSurface
@@ -88,6 +92,7 @@ fun MusicHomeScreen(
     albums: List<AlbumSummary>,
     playlists: List<PlaylistEntity>,
     playbackState: PlaybackState,
+    currentUserUid: String? = null,
     onPlayTrackFromList: (TrackEntity, List<TrackEntity>) -> Unit,
     onShufflePlayAll: () -> Unit,
     onPlayPlaylist: (PlaylistEntity) -> Unit,
@@ -98,7 +103,9 @@ fun MusicHomeScreen(
     onAddToPlaylist: (String, TrackEntity) -> Unit,
     onImportAudioFiles: () -> Unit,
     onNavigateToSearch: (String) -> Unit,
+    onNavigateToRadio: () -> Unit = {},
     onNavigateToSettings: () -> Unit,
+    onOpenAuthSheet: () -> Unit = {},
     onOpenNowPlaying: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -144,7 +151,7 @@ fun MusicHomeScreen(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 164.dp),
             verticalArrangement = Arrangement.spacedBy(22.dp)
         ) {
-            // 1. App Header with Neon Glass S Logo, Greeting, Import Audio & Settings Shortcut
+            // 1. App Header with Beatify Logo, Greeting, Account Sync, Import Audio & Settings Shortcut
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -159,13 +166,13 @@ fun MusicHomeScreen(
                         Column {
                             Text(
                                 text = greeting.uppercase(),
-                                color = SystemBlue,
+                                color = BeatifyAppleCrimson,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 1.2.sp
                             )
                             Text(
-                                text = "Synapse Music",
+                                text = "Beatify",
                                 color = LabelPrimary,
                                 fontSize = 24.sp,
                                 fontWeight = FontWeight.ExtraBold
@@ -174,6 +181,26 @@ fun MusicHomeScreen(
                     }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        IconButton(
+                            onClick = onOpenAuthSheet,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(MainSurface)
+                                .border(
+                                    1.dp,
+                                    if (currentUserUid != null) SystemGreen.copy(alpha = 0.6f) else SubtleBorderWhite,
+                                    CircleShape
+                                )
+                                .testTag("home_account_button")
+                        ) {
+                            Icon(
+                                imageVector = if (currentUserUid != null) Icons.Default.CloudDone else Icons.Default.AccountCircle,
+                                contentDescription = "Google Account & Cloud Sync",
+                                tint = if (currentUserUid != null) SystemGreen else BeatifyAppleCrimson
+                            )
+                        }
+
                         IconButton(
                             onClick = onImportAudioFiles,
                             modifier = Modifier
@@ -204,6 +231,88 @@ fun MusicHomeScreen(
                                 contentDescription = "Open Settings",
                                 tint = LabelPrimary
                             )
+                        }
+                    }
+                }
+            }
+
+            // 1b. Quick Cloud Sync & Live Radio Action Strip
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Surface(
+                        color = MainSurface,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .border(1.dp, SubtleBorderWhite, RoundedCornerShape(16.dp))
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable { onOpenAuthSheet() }
+                            .testTag("home_cloud_sync_card")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (currentUserUid != null) Icons.Default.CloudDone else Icons.Default.AccountCircle,
+                                contentDescription = null,
+                                tint = if (currentUserUid != null) SystemGreen else SystemBlue,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = if (currentUserUid != null) "Cloud Synced" else "Google Sign-In",
+                                    color = LabelPrimary,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = if (currentUserUid != null) "Firestore active" else "Sync playlists & favs",
+                                    color = SecondaryTextZinc,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                    }
+
+                    Surface(
+                        color = MainSurface,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .border(1.dp, BeatifyAppleCrimson.copy(alpha = 0.45f), RoundedCornerShape(16.dp))
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable { onNavigateToRadio() }
+                            .testTag("home_live_radio_card")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Radio,
+                                contentDescription = null,
+                                tint = BeatifyAppleCrimson,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "Beatify 1 Radio",
+                                    color = LabelPrimary,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Live 320 kbps & Shows",
+                                    color = SecondaryTextZinc,
+                                    fontSize = 10.sp
+                                )
+                            }
                         }
                     }
                 }

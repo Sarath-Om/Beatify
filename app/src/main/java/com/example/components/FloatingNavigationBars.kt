@@ -23,11 +23,13 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.Radio
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
@@ -48,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.MusicDestination
 import com.example.data.PlaybackState
+import com.example.ui.theme.BeatifyAppleCrimson
 import com.example.ui.theme.ElevatedSurface
 import com.example.ui.theme.HighlightFavoritePink
 import com.example.ui.theme.LabelPrimary
@@ -60,7 +63,7 @@ import com.example.ui.theme.SubtleBorderWhite
 import com.example.ui.theme.SystemBlue
 
 /**
- * Floating Mini-Player + 4-destination Bottom Navigation Bar (Home, Search, Library, Settings).
+ * Floating Mini-Player + 5-destination Bottom Navigation Bar (Home, Search, Radio, Library, Settings).
  *
  * Ensures the mini-player never overlaps or obscures list content or navigation buttons.
  */
@@ -257,6 +260,7 @@ fun BottomNavigationDock(
                 val icon = when (destination) {
                     MusicDestination.HOME -> if (selected) Icons.Filled.Home else Icons.Outlined.Home
                     MusicDestination.SEARCH -> if (selected) Icons.Filled.Search else Icons.Outlined.Search
+                    MusicDestination.RADIO -> if (selected) Icons.Filled.Radio else Icons.Outlined.Radio
                     MusicDestination.LIBRARY -> if (selected) Icons.Filled.LibraryMusic else Icons.Outlined.LibraryMusic
                     MusicDestination.SETTINGS -> if (selected) Icons.Filled.Settings else Icons.Outlined.Settings
                 }
@@ -270,7 +274,7 @@ fun BottomNavigationDock(
                             if (selected) {
                                 Brush.horizontalGradient(
                                     colors = listOf(
-                                        SystemBlue.copy(alpha = 0.22f),
+                                        BeatifyAppleCrimson.copy(alpha = 0.24f),
                                         SecondaryViolet.copy(alpha = 0.18f)
                                     )
                                 )
@@ -289,7 +293,7 @@ fun BottomNavigationDock(
                         Icon(
                             imageVector = icon,
                             contentDescription = destination.label,
-                            tint = if (selected) SystemBlue else SecondaryTextZinc,
+                            tint = if (selected) BeatifyAppleCrimson else SecondaryTextZinc,
                             modifier = Modifier.size(22.dp)
                         )
                         Spacer(modifier = Modifier.height(2.dp))

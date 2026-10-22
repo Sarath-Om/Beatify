@@ -15,9 +15,56 @@ import kotlinx.coroutines.flow.Flow
 enum class MusicDestination(val route: String, val label: String) {
     HOME("home", "Home"),
     SEARCH("search", "Search"),
+    RADIO("radio", "Radio"),
     LIBRARY("library", "Library"),
     SETTINGS("settings", "Settings")
 }
+
+data class RadioStationItem(
+    val id: String,
+    val name: String,
+    val tagline: String,
+    val genre: String,
+    val streamUrl: String,
+    val artworkUri: String,
+    val bitrateKbps: Int = 320,
+    val accentColorHex: Long = 0xFFFA2D48,
+    val isLive: Boolean = true
+)
+
+data class PodcastEpisodeItem(
+    val id: String,
+    val showId: String,
+    val showTitle: String,
+    val title: String,
+    val host: String,
+    val durationMs: Long,
+    val streamUrl: String,
+    val artworkUri: String,
+    val summary: String,
+    val accentColorHex: Long = 0xFF7C5CFF
+)
+
+data class OtaBundleManifest(
+    val bundleVersion: String = "2026.10.4-ota",
+    val targetNativeVersion: String = "1.0.0",
+    val channel: String = "stable",
+    val sha256Checksum: String = "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    val signatureVerified: Boolean = true,
+    val releaseNotes: String = "Apple Music OLED contrast tuning, lossless gapless handoff, and Firestore offline outbox optimizations.",
+    val lastCheckedAtMs: Long = System.currentTimeMillis(),
+    val statusLabel: String = "Up to date • Ed25519 Signature & SHA-256 Verified"
+)
+
+data class BeatifyPushNotificationItem(
+    val id: String,
+    val category: String,
+    val title: String,
+    val body: String,
+    val deepLink: String,
+    val receivedAtMs: Long = System.currentTimeMillis(),
+    val isRead: Boolean = false
+)
 
 enum class RepeatMode(val wireValue: String, val label: String) {
     OFF("off", "Repeat Off"),
@@ -386,4 +433,106 @@ object BundledMusicCatalog {
             )
         )
     }
+
+    fun defaultRadioStations(): List<RadioStationItem> = listOf(
+        RadioStationItem(
+            id = "beatify_one_global",
+            name = "Beatify 1 Global",
+            tagline = "24/7 Worldwide Flagship • Spatial Electronic & Indie",
+            genre = "Electronic",
+            streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+            artworkUri = "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800&q=80",
+            bitrateKbps = 320,
+            accentColorHex = 0xFFFA2D48
+        ),
+        RadioStationItem(
+            id = "beatify_chill_oled",
+            name = "Beatify Chill Radio",
+            tagline = "Ambient Glass, Downtempo & Midnight Lo-Fi",
+            genre = "Ambient",
+            streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
+            artworkUri = "https://images.unsplash.com/photo-1518609878373-06d740f60d8b?w=800&q=80",
+            bitrateKbps = 320,
+            accentColorHex = 0xFF0A84FF
+        ),
+        RadioStationItem(
+            id = "beatify_club_pulse",
+            name = "Beatify Club & Bass",
+            tagline = "Continuous Melodic Techno & Underground Sets",
+            genre = "Club",
+            streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
+            artworkUri = "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800&q=80",
+            bitrateKbps = 320,
+            accentColorHex = 0xFF7C5CFF
+        ),
+        RadioStationItem(
+            id = "beatify_hits_fm",
+            name = "Beatify Hits Live",
+            tagline = "Top Global Chartbreakers & Studio Premieres",
+            genre = "Hits",
+            streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
+            artworkUri = "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=800&q=80",
+            bitrateKbps = 256,
+            accentColorHex = 0xFFFF9F0A
+        ),
+        RadioStationItem(
+            id = "beatify_classical_spatial",
+            name = "Beatify Neo-Classical",
+            tagline = "Modern Piano, Strings & Orchestral Soundscapes",
+            genre = "Classical",
+            streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3",
+            artworkUri = "https://images.unsplash.com/photo-1507838153414-b4b713384a76?w=800&q=80",
+            bitrateKbps = 320,
+            accentColorHex = 0xFF30D158
+        ),
+        RadioStationItem(
+            id = "beatify_synthwave_fm",
+            name = "Beatify Analog Horizons",
+            tagline = "Modular Synthesizers & Retro-Futuristic Drives",
+            genre = "Synthwave",
+            streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3",
+            artworkUri = "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=800&q=80",
+            bitrateKbps = 320,
+            accentColorHex = 0xFF00E5FF
+        )
+    )
+
+    fun defaultPodcastEpisodes(): List<PodcastEpisodeItem> = listOf(
+        PodcastEpisodeItem(
+            id = "pod_ep_spatial_audio",
+            showId = "show_sonic_architecture",
+            showTitle = "Sonic Architecture",
+            title = "Ep. 42 — Designing Lossless Spatial Mixes for OLED Rooms",
+            host = "Elena Rostova & Marcus Vance",
+            durationMs = 1_845_000L,
+            streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+            artworkUri = "https://images.unsplash.com/photo-1590602847861-f357a9332bbc?w=800&q=80",
+            summary = "How mastering engineers balance sub-bass headroom and binaural reflections.",
+            accentColorHex = 0xFFFA2D48
+        ),
+        PodcastEpisodeItem(
+            id = "pod_ep_modular_synth",
+            showId = "show_waveform_diaries",
+            showTitle = "Waveform Diaries",
+            title = "Ep. 19 — Inside Buchla & Eurorack Live Improvisation",
+            host = "Sora Vance",
+            durationMs = 2_120_000L,
+            streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
+            artworkUri = "https://images.unsplash.com/photo-1478737270239-2f02b77fc618?w=800&q=80",
+            summary = "Exploring west-coast synthesis, tape loops, and generative polyrhythms.",
+            accentColorHex = 0xFF7C5CFF
+        ),
+        PodcastEpisodeItem(
+            id = "pod_ep_media3_internals",
+            showId = "show_android_audio_lab",
+            showTitle = "Android Audio Lab",
+            title = "Ep. 11 — Zero-Latency ExoPlayer & MediaSession Pipelines",
+            host = "Devon K.",
+            durationMs = 1_540_000L,
+            streamUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
+            artworkUri = "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800&q=80",
+            summary = "Deep dive into gapless track transitions, audio focus, and lock-screen artwork.",
+            accentColorHex = 0xFF0A84FF
+        )
+    )
 }

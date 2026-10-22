@@ -1,105 +1,111 @@
 {
   "entities": {
-    "CloudPlaylist": {
-      "title": "CloudPlaylist",
-      "description": "Synchronized user playlist stored in Cloud Firestore.",
+    "PlaylistDocument": {
+      "title": "PlaylistDocument",
+      "description": "User-authored Beatify playlist with optimistic concurrency revision and server timestamps.",
       "type": "object",
       "properties": {
-        "userId": { "type": "string", "description": "Owner Firebase Auth UID." },
-        "name": { "type": "string", "description": "Playlist display title (1..120 chars)." },
-        "description": { "type": "string", "description": "Playlist description (0..500 chars)." },
-        "trackIdsCsv": { "type": "string", "description": "Comma-separated track IDs (0..4000 chars)." },
-        "createdAt": { "type": "string", "format": "date-time", "description": "Server creation timestamp." },
-        "updatedAt": { "type": "string", "format": "date-time", "description": "Server update timestamp." }
-      },
-      "required": ["userId", "name", "description", "trackIdsCsv", "createdAt", "updatedAt"]
-    },
-    "CloudFavorite": {
-      "title": "CloudFavorite",
-      "description": "Synchronized favorite item (track, podcast, radio station, Live TV channel, or YouTube Music item).",
-      "type": "object",
-      "properties": {
-        "userId": { "type": "string", "description": "Owner Firebase Auth UID." },
-        "itemId": { "type": "string", "description": "Target media item identifier." },
-        "title": { "type": "string", "description": "Media title." },
-        "subtitle": { "type": "string", "description": "Artist, host, or network subtitle." },
-        "itemType": {
-          "type": "string",
-          "enum": ["track", "podcast", "radio", "livetv", "ytmusic"],
-          "description": "Media category."
+        "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "description": { "type": "string", "maxLength": 500 },
+        "trackIds": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 500
         },
-        "createdAt": { "type": "string", "format": "date-time", "description": "Server creation timestamp." },
-        "updatedAt": { "type": "string", "format": "date-time", "description": "Server update timestamp." }
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "revision": { "type": "integer", "minimum": 1 }
       },
-      "required": ["userId", "itemId", "title", "subtitle", "itemType", "createdAt", "updatedAt"]
+      "required": ["name", "trackIds", "createdAt", "updatedAt", "revision"]
     },
-    "CloudSubscription": {
-      "title": "CloudSubscription",
-      "description": "Synchronized podcast show or radio station subscription.",
+    "FavoriteDocument": {
+      "title": "FavoriteDocument",
+      "description": "User favorite track document keyed by deterministic trackId.",
       "type": "object",
       "properties": {
-        "userId": { "type": "string", "description": "Owner Firebase Auth UID." },
-        "showId": { "type": "string", "description": "Podcast show ID." },
-        "title": { "type": "string", "description": "Podcast show title." },
-        "publisher": { "type": "string", "description": "Podcast publisher or author." },
-        "feedUrl": { "type": "string", "description": "Validated RSS/Atom feed URL." },
-        "artworkUrl": { "type": "string", "description": "Cover artwork URL." },
-        "createdAt": { "type": "string", "format": "date-time", "description": "Server creation timestamp." },
-        "updatedAt": { "type": "string", "format": "date-time", "description": "Server update timestamp." }
+        "trackId": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "title": { "type": "string", "maxLength": 200 },
+        "artist": { "type": "string", "maxLength": 200 },
+        "artworkUri": { "type": "string", "maxLength": 1000 },
+        "addedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["userId", "showId", "title", "publisher", "feedUrl", "artworkUrl", "createdAt", "updatedAt"]
+      "required": ["trackId", "addedAt"]
     },
-    "CloudPreference": {
-      "title": "CloudPreference",
-      "description": "Synchronized user playback and privacy preference entry.",
+    "SubscriptionDocument": {
+      "title": "SubscriptionDocument",
+      "description": "User subscription to a podcast show, radio station, or music feed.",
       "type": "object",
       "properties": {
-        "userId": { "type": "string", "description": "Owner Firebase Auth UID." },
-        "audioQuality": { "type": "string", "description": "Selected audio quality preset." },
-        "gaplessPlayback": { "type": "boolean", "description": "Whether gapless playback is enabled." },
-        "otaChannel": { "type": "string", "description": "Selected OTA release channel." },
-        "analyticsConsent": { "type": "boolean", "description": "Whether privacy-preserving diagnostics are enabled." },
-        "createdAt": { "type": "string", "format": "date-time", "description": "Server creation timestamp." },
-        "updatedAt": { "type": "string", "format": "date-time", "description": "Server update timestamp." }
+        "provider": { "type": "string", "enum": ["podcast", "radio", "music"] },
+        "resourceId": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "title": { "type": "string", "maxLength": 200 },
+        "subscribedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["userId", "audioQuality", "gaplessPlayback", "otaChannel", "analyticsConsent", "createdAt", "updatedAt"]
+      "required": ["provider", "resourceId", "subscribedAt"]
     },
-    "CloudPlaybackProgress": {
-      "title": "CloudPlaybackProgress",
-      "description": "Synchronized playback resume point for tracks and podcast episodes.",
+    "PlaybackPreferences": {
+      "title": "PlaybackPreferences",
+      "description": "Singleton playback preferences document stored at users/{uid}/preferences/app.",
       "type": "object",
       "properties": {
-        "userId": { "type": "string", "description": "Owner Firebase Auth UID." },
-        "mediaId": { "type": "string", "description": "Track or podcast episode ID." },
-        "mediaType": { "type": "string", "enum": ["track", "episode"], "description": "Media item type." },
-        "positionMs": { "type": "integer", "description": "Playback position in milliseconds." },
-        "durationMs": { "type": "integer", "description": "Total duration in milliseconds." },
-        "createdAt": { "type": "string", "format": "date-time", "description": "Server creation timestamp." },
-        "updatedAt": { "type": "string", "format": "date-time", "description": "Server update timestamp." }
+        "shuffleEnabled": { "type": "boolean" },
+        "repeatMode": { "type": "string", "enum": ["off", "one", "all"] },
+        "playbackSpeed": { "type": "number", "minimum": 0.5, "maximum": 2.0 },
+        "crossfadeEnabled": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["userId", "mediaId", "mediaType", "positionMs", "durationMs", "createdAt", "updatedAt"]
+      "required": ["shuffleEnabled", "repeatMode", "playbackSpeed", "crossfadeEnabled", "updatedAt"]
+    },
+    "DeviceRegistrationDocument": {
+      "title": "DeviceRegistrationDocument",
+      "description": "FCM push notification device registration document stored under users/{uid}/devices/{deviceId}.",
+      "type": "object",
+      "properties": {
+        "tokenRef": { "type": "string", "minLength": 8, "maxLength": 256 },
+        "platform": { "type": "string", "enum": ["android", "web", "ios"] },
+        "appVersion": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "active": { "type": "boolean" },
+        "notificationCategories": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 10
+        },
+        "marketingOptIn": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "tokenRef",
+        "platform",
+        "appVersion",
+        "active",
+        "notificationCategories",
+        "marketingOptIn",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
-    "/users/{userId}/playlists/{playlistId}": {
-      "schema": { "$ref": "#/entities/CloudPlaylist" },
-      "description": "Per-user synchronized playlists."
+    "/users/{uid}/playlists/{playlistId}": {
+      "schema": { "$ref": "#/entities/PlaylistDocument" },
+      "description": "Per-user playlists isolated by path uid."
     },
-    "/users/{userId}/favorites/{favoriteId}": {
-      "schema": { "$ref": "#/entities/CloudFavorite" },
-      "description": "Per-user synchronized favorites across tracks, podcasts, radio, Live TV, and YouTube Music."
+    "/users/{uid}/favorites/{trackId}": {
+      "schema": { "$ref": "#/entities/FavoriteDocument" },
+      "description": "Per-user favorite tracks isolated by path uid and deterministic trackId."
     },
-    "/users/{userId}/subscriptions/{subscriptionId}": {
-      "schema": { "$ref": "#/entities/CloudSubscription" },
-      "description": "Per-user synchronized podcast subscriptions."
+    "/users/{uid}/subscriptions/{subscriptionId}": {
+      "schema": { "$ref": "#/entities/SubscriptionDocument" },
+      "description": "Per-user podcast/radio/music subscriptions isolated by path uid."
     },
-    "/users/{userId}/preferences/{prefId}": {
-      "schema": { "$ref": "#/entities/CloudPreference" },
-      "description": "Per-user synchronized playback and OTA channel preferences."
+    "/users/{uid}/preferences/{preferenceId}": {
+      "schema": { "$ref": "#/entities/PlaybackPreferences" },
+      "description": "Per-user playback preferences singleton document ('app')."
     },
-    "/users/{userId}/playbackProgress/{progressId}": {
-      "schema": { "$ref": "#/entities/CloudPlaybackProgress" },
-      "description": "Per-user synchronized track and podcast episode resume progress."
+    "/users/{uid}/devices/{deviceId}": {
+      "schema": { "$ref": "#/entities/DeviceRegistrationDocument" },
+      "description": "Per-user FCM device registrations isolated by path uid."
     }
   }
 }

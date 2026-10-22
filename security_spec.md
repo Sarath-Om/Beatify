@@ -1,21 +1,61 @@
-# Beatify Firestore Security Specification (`com.beatify.in`)
+# Beatify (`com.beatify.in`) — Firestore Security Specification
 
-## 1. Data Invariants
-1. **Per-User Isolation**: Every document under `/users/{userId}/playlists/{playlistId}`, `/users/{userId}/favorites/{favoriteId}`, `/users/{userId}/subscriptions/{subscriptionId}`, `/users/{userId}/preferences/{prefId}`, and `/users/{userId}/playbackProgress/{progressId}` is strictly owned by `userId` (`request.auth.uid == userId` and `data.userId == request.auth.uid`).
-2. **Immutable Ownership & Creation Timestamps**: `userId` and `createdAt` cannot be modified during `update` operations.
-3. **Server Timestamps**: All `createdAt` and `updatedAt` fields must be valid Firestore `timestamp` values (`<= request.time`).
-4. **Strict Key Allowlists**: Every `create` and `update` enforces `hasOnly(...)` and `isValid[Entity](incoming())` with bounded string lengths and valid IDs.
+## 1. Authentication & Authorization Model
+- **Identity Provider**: Firebase Authentication with Google Sign-In via Jetpack `CredentialManager` (`GetSignInWithGoogleOption`).
+- **Path-Based User Isolation**: Every user document is stored under `/users/{uid}/...` and gated by `signedInAs(uid)` (`request.auth != null && request.auth.uid == uid`).
+- **Offline-First Resilience**: Local audio, radio, and podcast playback remain available offline via Room & Media3 `ExoPlayer`. Cloud synchronization activates only when a user is signed in, with an offline mutation outbox and revision-checked conflict handling.
 
-## 2. The "Dirty Dozen" Payloads
-1. **Unauthenticated Read**: `GET /users/alice_123/playlists/pl_1` with `auth == null` -> Rejected.
-2. **Cross-User Read**: `GET /users/bob_456/playlists/pl_1` as `alice_123` -> Rejected.
-3. **UID Spoofing on Create**: `POST /users/alice_123/playlists/pl_1` with `{"userId": "bob_456", ...}` as `alice_123` -> Rejected.
-4. **Ghost Field Injection (Shadow Update)**: `POST /users/alice_123/favorites/fav_1` with `{"isAdmin": true}` -> Rejected by `hasOnly`.
-5. **Oversized String DoS**: `POST /users/alice_123/playlists/pl_1` with a 5,000-character `name` -> Rejected by `.size() <= 120`.
-6. **Immutable `createdAt` Tampering**: `PATCH /users/alice_123/playlists/pl_1` mutating `createdAt` -> Rejected.
-7. **Immutable `userId` Transfer**: `PATCH /users/alice_123/favorites/fav_1` mutating `userId` -> Rejected.
-8. **Future Timestamp Spoofing**: `POST /users/alice_123/subscriptions/sub_1` with `createdAt` in year 2099 -> Rejected by `<= request.time`.
-9. **Invalid Media Type Enum**: `POST /users/alice_123/favorites/fav_1` with `itemType: "executable"` -> Rejected by enum check (`['track', 'podcast', 'radio', 'livetv', 'ytmusic']`).
-10. **Negative Playback Position**: `POST /users/alice_123/playbackProgress/prog_1` with `positionMs: -500` -> Rejected by `>= 0`.
-11. **Malformed Document ID**: `POST /users/alice_123/playlists/bad id with spaces` -> Rejected by `isValidId`.
-12. **Cross-User Delete**: `DELETE /users/bob_456/subscriptions/sub_1` as `alice_123` -> Rejected.
+## 2. Validated Resource Schemas
+
+### 2.1 `/users/{uid}/playlists/{playlistId}` (`PlaylistDocument`)
+- **Required fields**: `name`, `trackIds`, `createdAt`, `updatedAt`, `revision`
+- **Optional fields**: `description`
+- **Constraints**:
+  - `name`: `string`, `1..100` chars
+  - `description`: optional `string`, `0..500` chars
+  - `trackIds`: `list`, `0..500` entries
+  - `createdAt`: `timestamp`, `<= request.time`, immutable on `update` (`request.resource.data.createdAt == resource.data.createdAt`)
+  - `updatedAt`: `timestamp`, `<= request.time`
+  - `revision`: `int >= 1`, must equal `1` on `create` and `resource.data.revision + 1` on `update`
+
+### 2.2 `/users/{uid}/favorites/{trackId}` (`FavoriteDocument`)
+- **Required fields**: `trackId`, `addedAt`
+- **Optional fields**: `title`, `artist`, `artworkUri`
+- **Constraints**:
+  - `trackId`: `string`, `1..200` chars, must match `{trackId}` document ID on `create` and `update`
+  - `title`: optional `string`, `0..200` chars
+  - `artist`: optional `string`, `0..200` chars
+  - `artworkUri`: optional `string`, `0..1000` chars
+  - `addedAt`: `timestamp`, `<= request.time`, immutable on `update` (`request.resource.data.addedAt == resource.data.addedAt`)
+
+### 2.3 `/users/{uid}/subscriptions/{subscriptionId}` (`SubscriptionDocument`)
+- **Required fields**: `provider`, `resourceId`, `subscribedAt`
+- **Optional fields**: `title`
+- **Constraints**:
+  - `provider`: `string` in `['podcast', 'radio', 'music']` (immutable on `update`)
+  - `resourceId`: `string`, `1..200` chars (immutable on `update`)
+  - `title`: optional `string`, `0..200` chars
+  - `subscribedAt`: `timestamp`, `<= request.time`, immutable on `update`
+
+### 2.4 `/users/{uid}/preferences/{preferenceId}` (`PlaybackPreferences`)
+- **Path restriction**: `preferenceId == 'app'`
+- **Required fields**: `shuffleEnabled`, `repeatMode`, `playbackSpeed`, `crossfadeEnabled`, `updatedAt`
+- **Constraints**:
+  - `shuffleEnabled`: `bool`
+  - `repeatMode`: `string` in `['off', 'one', 'all']`
+  - `playbackSpeed`: `number` (`int` or `float`), `0.5 <= playbackSpeed <= 2.0`
+  - `crossfadeEnabled`: `bool`
+  - `updatedAt`: `timestamp`, `<= request.time`
+
+### 2.5 `/users/{uid}/devices/{deviceId}` (`DeviceRegistrationDocument`)
+- **Required fields**: `tokenRef`, `platform`, `appVersion`, `active`, `notificationCategories`, `marketingOptIn`, `createdAt`, `updatedAt`
+- **Constraints**:
+  - `tokenRef`: `string`, `8..256` chars (hashed/redacted FCM token reference)
+  - `platform`: `string` in `['android', 'web', 'ios']` (immutable on `update`)
+  - `appVersion`: `string`, `1..60` chars
+  - `active`: `bool`
+  - `notificationCategories`: `list`, `0..10` items
+  - `marketingOptIn`: `bool`
+  - `createdAt`: `timestamp`, `<= request.time`, immutable on `update`
+  - `updatedAt`: `timestamp`, `<= request.time`
+  - Privileged delivery or entitlement fields (`isPremium`, `serverPrivileged`, `adminRole`) are strictly rejected via `hasOnly`.

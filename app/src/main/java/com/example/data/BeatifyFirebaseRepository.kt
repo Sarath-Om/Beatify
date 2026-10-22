@@ -18,13 +18,19 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.IgnoreExtraProperties
+import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.ServerTimestamp
+import com.google.firebase.firestore.Source
 import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
@@ -33,6 +39,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import org.json.JSONArray
 import org.json.JSONObject
+import java.security.MessageDigest
+import java.util.UUID
 
 enum class OperationType(val value: String) {
     CREATE("create"),
@@ -78,72 +86,106 @@ fun handleFirestoreError(
     return jsonString
 }
 
+/**
+ * Validated Firestore Playlist document (`users/{uid}/playlists/{playlistId}`).
+ */
 @IgnoreExtraProperties
 data class CloudPlaylist(
     @DocumentId val id: String = "",
-    val userId: String = "",
     val name: String = "",
     val description: String = "",
-    val trackIdsCsv: String = "",
+    val trackIds: List<String> = emptyList(),
     @ServerTimestamp val createdAt: Timestamp? = null,
-    @ServerTimestamp val updatedAt: Timestamp? = null
+    @ServerTimestamp val updatedAt: Timestamp? = null,
+    val revision: Long = 1L
 )
 
+/**
+ * Validated Firestore Favorite document (`users/{uid}/favorites/{trackId}`).
+ */
 @IgnoreExtraProperties
 data class CloudFavorite(
     @DocumentId val id: String = "",
-    val userId: String = "",
-    val itemId: String = "",
+    val trackId: String = "",
     val title: String = "",
-    val subtitle: String = "",
-    val itemType: String = "track",
-    @ServerTimestamp val createdAt: Timestamp? = null,
-    @ServerTimestamp val updatedAt: Timestamp? = null
+    val artist: String = "",
+    val artworkUri: String = "",
+    @ServerTimestamp val addedAt: Timestamp? = null
 )
 
+/**
+ * Validated Firestore Subscription document (`users/{uid}/subscriptions/{subscriptionId}`).
+ */
 @IgnoreExtraProperties
 data class CloudSubscription(
     @DocumentId val id: String = "",
-    val userId: String = "",
-    val showId: String = "",
+    val provider: String = "podcast",
+    val resourceId: String = "",
     val title: String = "",
-    val publisher: String = "",
-    val feedUrl: String = "",
-    val artworkUrl: String = "",
-    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val subscribedAt: Timestamp? = null
+)
+
+/**
+ * Validated Firestore PlaybackPreferences singleton (`users/{uid}/preferences/app`).
+ */
+@IgnoreExtraProperties
+data class CloudPlaybackPreferences(
+    @DocumentId val id: String = "app",
+    val shuffleEnabled: Boolean = false,
+    val repeatMode: String = "off",
+    val playbackSpeed: Double = 1.0,
+    val crossfadeEnabled: Boolean = true,
     @ServerTimestamp val updatedAt: Timestamp? = null
 )
 
+/**
+ * Validated Firestore Device Registration document (`users/{uid}/devices/{deviceId}`).
+ */
 @IgnoreExtraProperties
-data class CloudPreference(
+data class CloudDeviceRegistration(
     @DocumentId val id: String = "",
-    val userId: String = "",
-    val audioQuality: String = "LOSSLESS",
-    val gaplessPlayback: Boolean = true,
-    val otaChannel: String = "stable",
-    val analyticsConsent: Boolean = false,
-    @ServerTimestamp val createdAt: Timestamp? = null,
-    @ServerTimestamp val updatedAt: Timestamp? = null
-)
-
-@IgnoreExtraProperties
-data class CloudPlaybackProgress(
-    @DocumentId val id: String = "",
-    val userId: String = "",
-    val mediaId: String = "",
-    val mediaType: String = "track",
-    val positionMs: Long = 0L,
-    val durationMs: Long = 0L,
+    val tokenRef: String = "",
+    val platform: String = "android",
+    val appVersion: String = "1.0.0",
+    val active: Boolean = true,
+    val notificationCategories: List<String> = listOf("account", "music", "podcasts", "playlists", "updates", "system"),
+    val marketingOptIn: Boolean = false,
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 )
 
 /**
- * Beatify Cloud Firestore Repository (`com.beatify.in`).
+ * Sync status for Beatify Cloud Synchronization.
+ */
+sealed class BeatifySyncStatus {
+    data object SignedOut : BeatifySyncStatus()
+    data object Loading : BeatifySyncStatus()
+    data class Synced(val lastSyncedAtMs: Long, val pendingOutboxCount: Int = 0) : BeatifySyncStatus()
+    data class Offline(val pendingOutboxCount: Int) : BeatifySyncStatus()
+    data class Error(val message: String) : BeatifySyncStatus()
+}
+
+/**
+ * Queued offline mutation for idempotent replay when connectivity returns.
+ */
+data class QueuedOutboxMutation(
+    val id: String = UUID.randomUUID().toString(),
+    val type: String,
+    val targetId: String,
+    val payloadSummary: String,
+    val enqueuedAtMs: Long = System.currentTimeMillis()
+)
+
+/**
+ * Beatify Cloud Firestore Service & Repository (`com.beatify.in`).
  *
  * Uses the provisioned named database ID (`R.string.firestore_database_id`) and enforces
- * authenticated user scoping across `/users/{userId}/playlists`, `favorites`, `subscriptions`,
- * `preferences`, and `playbackProgress`.
+ * authenticated user scoping across:
+ * - `users/{uid}/playlists/{playlistId}`
+ * - `users/{uid}/favorites/{trackId}`
+ * - `users/{uid}/subscriptions/{subscriptionId}`
+ * - `users/{uid}/preferences/app`
+ * - `users/{uid}/devices/{deviceId}`
  */
 class BeatifyFirebaseRepository(
     private val db: FirebaseFirestore,
@@ -156,19 +198,61 @@ class BeatifyFirebaseRepository(
         FirebaseAuth.getInstance()
     )
 
+    private val activeListeners = mutableListOf<ListenerRegistration>()
+    private var activeBoundUid: String? = null
+
+    private val _syncStatus = MutableStateFlow<BeatifySyncStatus>(
+        if (auth.currentUser != null) BeatifySyncStatus.Loading else BeatifySyncStatus.SignedOut
+    )
+    val syncStatus: StateFlow<BeatifySyncStatus> = _syncStatus.asStateFlow()
+
+    private val _outbox = MutableStateFlow<List<QueuedOutboxMutation>>(emptyList())
+    val outbox: StateFlow<List<QueuedOutboxMutation>> = _outbox.asStateFlow()
+
     private fun requireUserId(): String {
         return auth.currentUser?.uid
             ?: throw IllegalStateException("User must be signed in with Google before accessing Firestore.")
     }
 
-    // --- 1. Playlists ---
+    /**
+     * Sanitizes a trackId or deviceId into a safe, deterministic Firestore document ID that prevents path traversal.
+     */
+    fun sanitizeDocId(rawId: String): String {
+        val cleaned = rawId.trim()
+            .replace("/", "_")
+            .replace(".", "_")
+            .replace("..", "_")
+            .take(200)
+        require(cleaned.isNotEmpty()) { "Document ID cannot be empty" }
+        return cleaned
+    }
+
+    /**
+     * Hashes a raw FCM token so full device tokens are never logged or stored unmasked.
+     */
+    fun computeTokenRef(rawTokenOrSeed: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(rawTokenOrSeed.toByteArray(Charsets.UTF_8))
+        return "sha256_" + digest.joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * Clears all active Firestore snapshot listeners and user-specific caches on sign-out or account switch.
+     */
+    fun detachAllListenersAndClearCache() {
+        activeListeners.forEach { runCatching { it.remove() } }
+        activeListeners.clear()
+        activeBoundUid = null
+        _outbox.value = emptyList()
+        _syncStatus.value = BeatifySyncStatus.SignedOut
+    }
+
+    // --- 1. Playlists (`users/{uid}/playlists/{playlistId}`) ---
 
     fun observePlaylists(targetUserId: String? = null): Flow<List<CloudPlaylist>> = flow {
         val uid = targetUserId ?: auth.currentUser?.uid ?: "unauthenticated"
         val path = "users/$uid/playlists"
         emitAll(
             db.collection("users").document(uid).collection("playlists")
-                .whereEqualTo("userId", uid)
                 .snapshots()
                 .map { snapshot ->
                     snapshot.toObjects(
@@ -183,6 +267,112 @@ class BeatifyFirebaseRepository(
         )
     }
 
+    suspend fun listPlaylists(): Result<List<CloudPlaylist>> {
+        val uid = requireUserId()
+        val colRef = db.collection("users").document(uid).collection("playlists")
+        return try {
+            val snap = colRef.get().await()
+            val list = snap.toObjects(
+                CloudPlaylist::class.java,
+                DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+            )
+            Result.success(list)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.LIST, colRef.path, auth)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun createPlaylist(
+        name: String,
+        trackIds: List<String>,
+        description: String = "",
+        customPlaylistId: String? = null
+    ): Result<String> {
+        val uid = requireUserId()
+        val trimmedName = name.trim().take(100)
+        require(trimmedName.isNotEmpty()) { "Playlist name must not be empty" }
+        val deduplicatedTracks = trackIds.map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(500)
+
+        val colRef = db.collection("users").document(uid).collection("playlists")
+        val docRef = if (!customPlaylistId.isNullOrBlank()) {
+            colRef.document(sanitizeDocId(customPlaylistId))
+        } else {
+            colRef.document()
+        }
+
+        return try {
+            val payload = mutableMapOf<String, Any>(
+                "name" to trimmedName,
+                "trackIds" to deduplicatedTracks,
+                "createdAt" to FieldValue.serverTimestamp(),
+                "updatedAt" to FieldValue.serverTimestamp(),
+                "revision" to 1L
+            )
+            if (description.isNotBlank()) {
+                payload["description"] = description.trim().take(500)
+            }
+            docRef.set(payload).await()
+            _syncStatus.value = BeatifySyncStatus.Synced(System.currentTimeMillis(), _outbox.value.size)
+            Result.success(docRef.id)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, docRef.path, auth)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updatePlaylist(
+        playlistId: String,
+        name: String? = null,
+        description: String? = null,
+        trackIds: List<String>? = null
+    ): Result<Unit> {
+        val uid = requireUserId()
+        val cleanId = sanitizeDocId(playlistId)
+        val docRef = db.collection("users").document(uid).collection("playlists").document(cleanId)
+
+        return try {
+            val existingSnap = docRef.get().await()
+            if (!existingSnap.exists()) {
+                throw IllegalStateException("Playlist $cleanId does not exist")
+            }
+            val currentRevision = existingSnap.getLong("revision") ?: 1L
+            val nextRevision = currentRevision + 1L
+
+            val updates = mutableMapOf<String, Any>(
+                "updatedAt" to FieldValue.serverTimestamp(),
+                "revision" to nextRevision
+            )
+            if (name != null) {
+                val validName = name.trim().take(100)
+                require(validName.isNotEmpty()) { "Playlist name must not be empty" }
+                updates["name"] = validName
+            }
+            if (description != null) {
+                updates["description"] = description.trim().take(500)
+            }
+            if (trackIds != null) {
+                updates["trackIds"] = trackIds.map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(500)
+            }
+
+            docRef.update(updates).await()
+            _syncStatus.value = BeatifySyncStatus.Synced(System.currentTimeMillis(), _outbox.value.size)
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, docRef.path, auth)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Convenience idempotent upsert for local-to-cloud playlist sync with revision checking.
+     */
     suspend fun upsertPlaylist(
         playlistId: String,
         name: String,
@@ -190,37 +380,28 @@ class BeatifyFirebaseRepository(
         trackIdsCsv: String
     ): Result<String> {
         val uid = requireUserId()
-        val docRef = db.collection("users").document(uid).collection("playlists").document(playlistId)
+        val cleanId = sanitizeDocId(playlistId)
+        val docRef = db.collection("users").document(uid).collection("playlists").document(cleanId)
+        val trackList = trackIdsCsv.split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(500)
+
         return try {
             val existingSnap = docRef.get().await()
             if (existingSnap.exists()) {
-                val existing = existingSnap.toObject(
-                    CloudPlaylist::class.java,
-                    DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                )
-                val model = CloudPlaylist(
-                    id = playlistId,
-                    userId = uid,
-                    name = name.take(120).ifBlank { "Playlist" },
-                    description = description.take(500),
-                    trackIdsCsv = trackIdsCsv.take(4000),
-                    createdAt = existing?.createdAt,
-                    updatedAt = null
-                )
-                docRef.set(model).await()
+                updatePlaylist(
+                    playlistId = cleanId,
+                    name = name,
+                    description = description,
+                    trackIds = trackList
+                ).getOrThrow()
+                Result.success(cleanId)
             } else {
-                val model = CloudPlaylist(
-                    id = playlistId,
-                    userId = uid,
-                    name = name.take(120).ifBlank { "Playlist" },
-                    description = description.take(500),
-                    trackIdsCsv = trackIdsCsv.take(4000),
-                    createdAt = null,
-                    updatedAt = null
+                createPlaylist(
+                    name = name,
+                    trackIds = trackList,
+                    description = description,
+                    customPlaylistId = cleanId
                 )
-                docRef.set(model).await()
             }
-            Result.success(playlistId)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -232,7 +413,7 @@ class BeatifyFirebaseRepository(
     suspend fun getPlaylistById(ownerUid: String, playlistId: String): Result<CloudPlaylist?> {
         val docRef = db.collection("users").document(ownerUid).collection("playlists").document(playlistId)
         return try {
-            val snap = docRef.get().await()
+            val snap = docRef.get(Source.SERVER).await()
             Result.success(
                 snap.toObject(CloudPlaylist::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
             )
@@ -246,7 +427,7 @@ class BeatifyFirebaseRepository(
 
     suspend fun deletePlaylist(playlistId: String): Result<Unit> {
         val uid = requireUserId()
-        val docRef = db.collection("users").document(uid).collection("playlists").document(playlistId)
+        val docRef = db.collection("users").document(uid).collection("playlists").document(sanitizeDocId(playlistId))
         return try {
             docRef.delete().await()
             Result.success(Unit)
@@ -258,14 +439,13 @@ class BeatifyFirebaseRepository(
         }
     }
 
-    // --- 2. Favorites ---
+    // --- 2. Favorites (`users/{uid}/favorites/{trackId}`) ---
 
     fun observeFavorites(targetUserId: String? = null): Flow<List<CloudFavorite>> = flow {
         val uid = targetUserId ?: auth.currentUser?.uid ?: "unauthenticated"
         val path = "users/$uid/favorites"
         emitAll(
             db.collection("users").document(uid).collection("favorites")
-                .whereEqualTo("userId", uid)
                 .snapshots()
                 .map { snapshot ->
                     snapshot.toObjects(
@@ -280,28 +460,54 @@ class BeatifyFirebaseRepository(
         )
     }
 
-    suspend fun saveFavorite(
-        favoriteId: String,
-        itemId: String,
-        title: String,
-        subtitle: String,
-        itemType: String
+    suspend fun listFavorites(): Result<List<CloudFavorite>> {
+        val uid = requireUserId()
+        val colRef = db.collection("users").document(uid).collection("favorites")
+        return try {
+            val snap = colRef.get().await()
+            Result.success(
+                snap.toObjects(CloudFavorite::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.LIST, colRef.path, auth)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun addFavorite(
+        trackId: String,
+        title: String? = null,
+        artist: String? = null,
+        artworkUri: String? = null
     ): Result<String> {
         val uid = requireUserId()
-        val docRef = db.collection("users").document(uid).collection("favorites").document(favoriteId)
+        val safeTrackId = sanitizeDocId(trackId)
+        val docRef = db.collection("users").document(uid).collection("favorites").document(safeTrackId)
+
         return try {
-            val model = CloudFavorite(
-                id = favoriteId,
-                userId = uid,
-                itemId = itemId.take(160),
-                title = title.take(200).ifBlank { "Untitled" },
-                subtitle = subtitle.take(200),
-                itemType = itemType,
-                createdAt = null,
-                updatedAt = null
-            )
-            docRef.set(model).await()
-            Result.success(favoriteId)
+            val existingSnap = docRef.get().await()
+            if (existingSnap.exists()) {
+                val updates = mutableMapOf<String, Any>(
+                    "trackId" to safeTrackId
+                )
+                if (!title.isNullOrBlank()) updates["title"] = title.trim().take(200)
+                if (!artist.isNullOrBlank()) updates["artist"] = artist.trim().take(200)
+                if (!artworkUri.isNullOrBlank()) updates["artworkUri"] = artworkUri.trim().take(1000)
+                docRef.update(updates).await()
+            } else {
+                val payload = mutableMapOf<String, Any>(
+                    "trackId" to safeTrackId,
+                    "addedAt" to FieldValue.serverTimestamp()
+                )
+                if (!title.isNullOrBlank()) payload["title"] = title.trim().take(200)
+                if (!artist.isNullOrBlank()) payload["artist"] = artist.trim().take(200)
+                if (!artworkUri.isNullOrBlank()) payload["artworkUri"] = artworkUri.trim().take(1000)
+                docRef.set(payload).await()
+            }
+            _syncStatus.value = BeatifySyncStatus.Synced(System.currentTimeMillis(), _outbox.value.size)
+            Result.success(safeTrackId)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -310,9 +516,10 @@ class BeatifyFirebaseRepository(
         }
     }
 
-    suspend fun removeFavorite(favoriteId: String): Result<Unit> {
+    suspend fun removeFavorite(trackId: String): Result<Unit> {
         val uid = requireUserId()
-        val docRef = db.collection("users").document(uid).collection("favorites").document(favoriteId)
+        val safeTrackId = sanitizeDocId(trackId)
+        val docRef = db.collection("users").document(uid).collection("favorites").document(safeTrackId)
         return try {
             docRef.delete().await()
             Result.success(Unit)
@@ -324,14 +531,13 @@ class BeatifyFirebaseRepository(
         }
     }
 
-    // --- 3. Podcast Subscriptions ---
+    // --- 3. Subscriptions (`users/{uid}/subscriptions/{subscriptionId}`) ---
 
     fun observeSubscriptions(targetUserId: String? = null): Flow<List<CloudSubscription>> = flow {
         val uid = targetUserId ?: auth.currentUser?.uid ?: "unauthenticated"
         val path = "users/$uid/subscriptions"
         emitAll(
             db.collection("users").document(uid).collection("subscriptions")
-                .whereEqualTo("userId", uid)
                 .snapshots()
                 .map { snapshot ->
                     snapshot.toObjects(
@@ -346,29 +552,54 @@ class BeatifyFirebaseRepository(
         )
     }
 
-    suspend fun saveSubscription(
-        subscriptionId: String,
-        showId: String,
-        title: String,
-        publisher: String,
-        feedUrl: String,
-        artworkUrl: String
+    suspend fun listSubscriptions(): Result<List<CloudSubscription>> {
+        val uid = requireUserId()
+        val colRef = db.collection("users").document(uid).collection("subscriptions")
+        return try {
+            val snap = colRef.get().await()
+            Result.success(
+                snap.toObjects(CloudSubscription::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.LIST, colRef.path, auth)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun subscribe(
+        provider: String,
+        resourceId: String,
+        title: String? = null
     ): Result<String> {
         val uid = requireUserId()
+        require(provider in setOf("podcast", "radio", "music")) {
+            "Invalid subscription provider: $provider"
+        }
+        val cleanResourceId = resourceId.trim().take(200)
+        require(cleanResourceId.isNotEmpty()) { "Subscription resourceId must not be empty" }
+
+        val subscriptionId = sanitizeDocId("${provider}_${cleanResourceId}")
         val docRef = db.collection("users").document(uid).collection("subscriptions").document(subscriptionId)
         return try {
-            val model = CloudSubscription(
-                id = subscriptionId,
-                userId = uid,
-                showId = showId.take(160),
-                title = title.take(200),
-                publisher = publisher.take(200),
-                feedUrl = feedUrl.take(600),
-                artworkUrl = artworkUrl.take(600),
-                createdAt = null,
-                updatedAt = null
-            )
-            docRef.set(model).await()
+            val existingSnap = docRef.get().await()
+            if (existingSnap.exists()) {
+                if (!title.isNullOrBlank()) {
+                    docRef.update(mapOf("title" to title.trim().take(200))).await()
+                }
+            } else {
+                val payload = mutableMapOf<String, Any>(
+                    "provider" to provider,
+                    "resourceId" to cleanResourceId,
+                    "subscribedAt" to FieldValue.serverTimestamp()
+                )
+                if (!title.isNullOrBlank()) {
+                    payload["title"] = title.trim().take(200)
+                }
+                docRef.set(payload).await()
+            }
+            _syncStatus.value = BeatifySyncStatus.Synced(System.currentTimeMillis(), _outbox.value.size)
             Result.success(subscriptionId)
         } catch (e: CancellationException) {
             throw e
@@ -378,33 +609,69 @@ class BeatifyFirebaseRepository(
         }
     }
 
-    // --- 4. Preferences ---
+    suspend fun unsubscribe(subscriptionId: String): Result<Unit> {
+        val uid = requireUserId()
+        val docRef = db.collection("users").document(uid).collection("subscriptions").document(sanitizeDocId(subscriptionId))
+        return try {
+            docRef.delete().await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, docRef.path, auth)
+            Result.failure(e)
+        }
+    }
 
-    suspend fun savePreferences(
-        audioQuality: String,
-        gaplessPlayback: Boolean,
-        otaChannel: String,
-        analyticsConsent: Boolean
+    // --- 4. Playback Preferences (`users/{uid}/preferences/app`) ---
+
+    suspend fun getPlaybackPreferences(): Result<CloudPlaybackPreferences?> {
+        val uid = requireUserId()
+        val docRef = db.collection("users").document(uid).collection("preferences").document("app")
+        return try {
+            val snap = docRef.get().await()
+            if (!snap.exists()) {
+                Result.success(null)
+            } else {
+                Result.success(
+                    snap.toObject(
+                        CloudPlaybackPreferences::class.java,
+                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                    )
+                )
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.GET, docRef.path, auth)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun savePlaybackPreferences(
+        shuffleEnabled: Boolean,
+        repeatMode: String,
+        playbackSpeed: Double,
+        crossfadeEnabled: Boolean
     ): Result<Unit> {
         val uid = requireUserId()
-        val docRef = db.collection("users").document(uid).collection("preferences").document("user_prefs")
+        require(repeatMode in setOf("off", "one", "all")) {
+            "repeatMode must be one of: off, one, all"
+        }
+        require(playbackSpeed in 0.5..2.0) {
+            "playbackSpeed must be between 0.5 and 2.0"
+        }
+        val docRef = db.collection("users").document(uid).collection("preferences").document("app")
         return try {
-            val existingSnap = docRef.get().await()
-            val existing = existingSnap.toObject(
-                CloudPreference::class.java,
-                DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+            val payload = mapOf(
+                "shuffleEnabled" to shuffleEnabled,
+                "repeatMode" to repeatMode,
+                "playbackSpeed" to playbackSpeed,
+                "crossfadeEnabled" to crossfadeEnabled,
+                "updatedAt" to FieldValue.serverTimestamp()
             )
-            val model = CloudPreference(
-                id = "user_prefs",
-                userId = uid,
-                audioQuality = audioQuality.take(60),
-                gaplessPlayback = gaplessPlayback,
-                otaChannel = otaChannel,
-                analyticsConsent = analyticsConsent,
-                createdAt = if (existingSnap.exists()) existing?.createdAt else null,
-                updatedAt = null
-            )
-            docRef.set(model).await()
+            docRef.set(payload).await()
+            _syncStatus.value = BeatifySyncStatus.Synced(System.currentTimeMillis(), _outbox.value.size)
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
@@ -414,39 +681,75 @@ class BeatifyFirebaseRepository(
         }
     }
 
-    // --- 5. Playback Progress ---
+    // --- 5. FCM Device Registration (`users/{uid}/devices/{deviceId}`) ---
 
-    suspend fun savePlaybackProgress(
-        progressId: String,
-        mediaId: String,
-        mediaType: String,
-        positionMs: Long,
-        durationMs: Long
-    ): Result<Unit> {
+    suspend fun registerDevice(
+        deviceId: String = "android_primary",
+        rawTokenOrSeed: String,
+        appVersion: String = "1.0.0",
+        notificationCategories: List<String> = listOf("account", "music", "podcasts", "playlists", "updates", "system"),
+        marketingOptIn: Boolean = false
+    ): Result<String> {
         val uid = requireUserId()
-        val docRef = db.collection("users").document(uid).collection("playbackProgress").document(progressId)
+        val safeDeviceId = sanitizeDocId(deviceId)
+        val tokenRef = computeTokenRef("$uid:$safeDeviceId:$rawTokenOrSeed")
+        val docRef = db.collection("users").document(uid).collection("devices").document(safeDeviceId)
+
         return try {
             val existingSnap = docRef.get().await()
-            val existing = existingSnap.toObject(
-                CloudPlaybackProgress::class.java,
-                DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-            )
-            val model = CloudPlaybackProgress(
-                id = progressId,
-                userId = uid,
-                mediaId = mediaId.take(160),
-                mediaType = mediaType,
-                positionMs = positionMs.coerceAtLeast(0L),
-                durationMs = durationMs.coerceAtLeast(0L),
-                createdAt = if (existingSnap.exists()) existing?.createdAt else null,
-                updatedAt = null
-            )
-            docRef.set(model).await()
-            Result.success(Unit)
+            if (existingSnap.exists()) {
+                val updates = mapOf(
+                    "tokenRef" to tokenRef,
+                    "appVersion" to appVersion.trim().take(60).ifEmpty { "1.0.0" },
+                    "active" to true,
+                    "notificationCategories" to notificationCategories.distinct().take(10),
+                    "marketingOptIn" to marketingOptIn,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+                docRef.update(updates).await()
+            } else {
+                val payload = mapOf(
+                    "tokenRef" to tokenRef,
+                    "platform" to "android",
+                    "appVersion" to appVersion.trim().take(60).ifEmpty { "1.0.0" },
+                    "active" to true,
+                    "notificationCategories" to notificationCategories.distinct().take(10),
+                    "marketingOptIn" to marketingOptIn,
+                    "createdAt" to FieldValue.serverTimestamp(),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+                docRef.set(payload).await()
+            }
+            Result.success(safeDeviceId)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.WRITE, docRef.path, auth)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deactivateDevice(deviceId: String = "android_primary"): Result<Unit> {
+        val uid = auth.currentUser?.uid ?: return Result.success(Unit)
+        val safeDeviceId = sanitizeDocId(deviceId)
+        val docRef = db.collection("users").document(uid).collection("devices").document(safeDeviceId)
+        return try {
+            val existingSnap = docRef.get().await()
+            if (existingSnap.exists()) {
+                docRef.update(
+                    mapOf(
+                        "active" to false,
+                        "notificationCategories" to emptyList<String>(),
+                        "marketingOptIn" to false,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, docRef.path, auth)
             Result.failure(e)
         }
     }

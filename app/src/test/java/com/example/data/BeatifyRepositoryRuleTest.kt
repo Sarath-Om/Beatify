@@ -14,17 +14,17 @@ import java.util.UUID
 class BeatifyRepositoryRuleTest : FirestoreEmulatorTestBase() {
 
     @Test
-    fun upsertPlaylist_authenticatedOwner_createsAndUpdatesDocument() = runBlocking {
+    fun createAndUpdatePlaylist_authenticatedOwner_enforcesRevisionAndTimestamps() = runBlocking {
         val aliceUid = signInTestUser(ALICE_EMAIL)
         val repository = BeatifyFirebaseRepository(firestore, auth)
         val playlistId = "pl_${UUID.randomUUID().toString().replace("-", "")}"
 
         val createResult = withTimeout(DEFAULT_TIMEOUT_MS) {
-            repository.upsertPlaylist(
-                playlistId = playlistId,
+            repository.createPlaylist(
                 name = "Apple Music Spatial Mix",
+                trackIds = listOf("demo_midnight_synapse", "demo_neon_horizon"),
                 description = "OLED Dark Master",
-                trackIdsCsv = "demo_midnight_synapse,demo_neon_horizon"
+                customPlaylistId = playlistId
             )
         }
         assertTrue(createResult.isSuccess)
@@ -36,40 +36,82 @@ class BeatifyRepositoryRuleTest : FirestoreEmulatorTestBase() {
         val playlist = fetchedResult.getOrNull()
         assertNotNull(playlist)
         assertEquals("Apple Music Spatial Mix", playlist?.name)
+        assertEquals(1L, playlist?.revision)
 
-        // Update existing playlist preserving createdAt
         val updateResult = withTimeout(DEFAULT_TIMEOUT_MS) {
-            repository.upsertPlaylist(
+            repository.updatePlaylist(
                 playlistId = playlistId,
                 name = "Apple Music Spatial Mix v2",
                 description = "Updated description",
-                trackIdsCsv = "demo_midnight_synapse"
+                trackIds = listOf("demo_midnight_synapse")
             )
         }
         assertTrue(updateResult.isSuccess)
+
+        val updatedSnap = withTimeout(DEFAULT_TIMEOUT_MS) {
+            repository.getPlaylistById(aliceUid, playlistId)
+        }.getOrNull()
+        assertEquals("Apple Music Spatial Mix v2", updatedSnap?.name)
+        assertEquals(2L, updatedSnap?.revision)
     }
 
     @Test
-    fun observeFavorites_authenticatedOwner_emitsRealtimeUpdates() = runBlocking {
+    fun favoritesSubscriptionsPreferencesAndDevices_authenticatedOwner_succeedWithValidatedSchemas() = runBlocking {
         signInTestUser(ALICE_EMAIL)
         val repository = BeatifyFirebaseRepository(firestore, auth)
-        val favId = "fav_${UUID.randomUUID().toString().replace("-", "")}"
+        val trackId = "track_${UUID.randomUUID().toString().replace("-", "")}"
 
-        val saveResult = withTimeout(DEFAULT_TIMEOUT_MS) {
-            repository.saveFavorite(
-                favoriteId = favId,
-                itemId = "demo_midnight_synapse",
+        val favResult = withTimeout(DEFAULT_TIMEOUT_MS) {
+            repository.addFavorite(
+                trackId = trackId,
                 title = "Midnight Synapse",
-                subtitle = "Aether & Kora",
-                itemType = "track"
+                artist = "Aether & Kora",
+                artworkUri = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe"
             )
         }
-        assertTrue(saveResult.isSuccess)
+        assertTrue(favResult.isSuccess)
 
-        val emitted = withTimeout(FLOW_TIMEOUT_MS) {
-            repository.observeFavorites().first { list -> list.any { it.id == favId } }
+        val emittedFavs = withTimeout(FLOW_TIMEOUT_MS) {
+            repository.observeFavorites().first { list -> list.any { it.trackId == trackId } }
         }
-        assertTrue(emitted.any { it.id == favId })
+        assertTrue(emittedFavs.any { it.trackId == trackId })
+
+        val resourceId = "pod_${UUID.randomUUID().toString().replace("-", "")}"
+        val subResult = withTimeout(DEFAULT_TIMEOUT_MS) {
+            repository.subscribe(
+                provider = "podcast",
+                resourceId = resourceId,
+                title = "Mastering Spatial Audio"
+            )
+        }
+        assertTrue(subResult.isSuccess)
+
+        val prefResult = withTimeout(DEFAULT_TIMEOUT_MS) {
+            repository.savePlaybackPreferences(
+                shuffleEnabled = true,
+                repeatMode = "all",
+                playbackSpeed = 1.25,
+                crossfadeEnabled = true
+            )
+        }
+        assertTrue(prefResult.isSuccess)
+
+        val deviceId = "dev_${UUID.randomUUID().toString().replace("-", "")}"
+        val deviceResult = withTimeout(DEFAULT_TIMEOUT_MS) {
+            repository.registerDevice(
+                deviceId = deviceId,
+                rawTokenOrSeed = "fcm_token_seed_12345",
+                appVersion = "1.0.0",
+                notificationCategories = listOf("account", "music", "podcasts", "updates"),
+                marketingOptIn = false
+            )
+        }
+        assertTrue(deviceResult.isSuccess)
+
+        val deactivateResult = withTimeout(DEFAULT_TIMEOUT_MS) {
+            repository.deactivateDevice(deviceId)
+        }
+        assertTrue(deactivateResult.isSuccess)
     }
 
     @Test
@@ -79,15 +121,14 @@ class BeatifyRepositoryRuleTest : FirestoreEmulatorTestBase() {
         val playlistId = "pl_${UUID.randomUUID().toString().replace("-", "")}"
 
         withTimeout(DEFAULT_TIMEOUT_MS) {
-            aliceRepo.upsertPlaylist(
-                playlistId = playlistId,
+            aliceRepo.createPlaylist(
                 name = "Alice Private Mix",
+                trackIds = listOf("demo_midnight_synapse"),
                 description = "Private",
-                trackIdsCsv = "demo_midnight_synapse"
+                customPlaylistId = playlistId
             ).getOrThrow()
         }
 
-        // Switch to Bob and attempt to read Alice's playlist
         signInTestUser(BOB_EMAIL)
         val bobRepo = BeatifyFirebaseRepository(firestore, auth)
         val crossReadResult = withTimeout(DEFAULT_TIMEOUT_MS) {
@@ -99,19 +140,26 @@ class BeatifyRepositoryRuleTest : FirestoreEmulatorTestBase() {
     }
 
     @Test
-    fun observePlaylists_unauthenticatedUser_failsWithPermissionDenied() = runBlocking {
-        auth.signOut()
-        val repository = BeatifyFirebaseRepository(firestore, auth)
-
-        var caughtCode: FirebaseFirestoreException.Code? = null
-        try {
-            withTimeout(FLOW_TIMEOUT_MS) {
-                repository.observePlaylists("alice_unauth_test").first()
-            }
-        } catch (e: FirebaseFirestoreException) {
-            caughtCode = e.code
+    fun unauthenticatedUser_cannotReadProtectedPlaylist_failsWithPermissionDenied() = runBlocking {
+        val aliceUid = signInTestUser(ALICE_EMAIL)
+        val aliceRepo = BeatifyFirebaseRepository(firestore, auth)
+        val playlistId = "pl_${UUID.randomUUID().toString().replace("-", "")}"
+        withTimeout(DEFAULT_TIMEOUT_MS) {
+            aliceRepo.createPlaylist(
+                name = "Protected Mix",
+                trackIds = listOf("demo_midnight_synapse"),
+                customPlaylistId = playlistId
+            ).getOrThrow()
         }
-        assertEquals(FirebaseFirestoreException.Code.PERMISSION_DENIED, caughtCode)
+
+        auth.signOut()
+        val unauthRepo = BeatifyFirebaseRepository(firestore, auth)
+        val unauthReadResult = withTimeout(DEFAULT_TIMEOUT_MS) {
+            unauthRepo.getPlaylistById(aliceUid, playlistId)
+        }
+        assertTrue(unauthReadResult.isFailure)
+        val exception = unauthReadResult.exceptionOrNull() as? FirebaseFirestoreException
+        assertEquals(FirebaseFirestoreException.Code.PERMISSION_DENIED, exception?.code)
     }
 
     private companion object {

@@ -18,8 +18,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * Renders the custom Synapse "Neon Glass S" logo (dark obsidian glass squircle with glowing
- * cyan/violet/magenta rim and 3D liquid glass 'S' ribbon with specular white highlights).
+ * Renders the custom Beatify 3D Liquid Glass logo (OLED obsidian squircle with Apple Music
+ * crimson `#FA2D48`, electric blue `#0A84FF`, and violet `#7C5CFF` acoustic wave & 'B' ribbon).
  */
 @Composable
 fun SynapseNeonLogo(
@@ -35,13 +35,13 @@ fun SynapseNeonLogo(
         val h = this.size.height
         val corner = w * 0.26f
 
-        // 1. Deep Obsidian Glass Squircle Background
+        // 1. Deep OLED Obsidian Squircle Background
         drawRoundRect(
             brush = Brush.linearGradient(
                 colors = listOf(
-                    Color(0xFF0A1226),
-                    Color(0xFF060711),
-                    Color(0xFF1A071E)
+                    Color(0xFF180810),
+                    Color(0xFF07070C),
+                    Color(0xFF0D1024)
                 ),
                 start = Offset(0f, 0f),
                 end = Offset(w, h)
@@ -51,30 +51,29 @@ fun SynapseNeonLogo(
             cornerRadius = CornerRadius(corner, corner)
         )
 
-        // 2. Ambient Inner Glass Glow behind the S
+        // 2. Ambient Inner Crimson/Violet Glow
         drawCircle(
             brush = Brush.radialGradient(
                 colors = listOf(
-                    Color(0x557C5CFF),
-                    Color(0x220A84FF),
+                    Color(0x66FA2D48),
+                    Color(0x337C5CFF),
                     Color.Transparent
                 ),
-                center = Offset(w * 0.5f, h * 0.5f),
+                center = Offset(w * 0.52f, h * 0.5f),
                 radius = w * 0.46f
             ),
             radius = w * 0.46f,
-            center = Offset(w * 0.5f, h * 0.5f)
+            center = Offset(w * 0.52f, h * 0.5f)
         )
 
-        // 3. Outer Neon Glass Squircle Specular Rim (Cyan -> Blue -> Purple -> Pink)
+        // 3. Outer Glass Squircle Specular Rim (Crimson -> Violet -> Electric Blue)
         drawRoundRect(
             brush = Brush.linearGradient(
                 colors = listOf(
-                    Color(0xFF64E9FF),
-                    Color(0xFF0A84FF),
-                    Color(0xFF8C52FF),
                     Color(0xFFFA2D48),
-                    Color(0xFF3E90FF)
+                    Color(0xFFFF5E7E),
+                    Color(0xFF7C5CFF),
+                    Color(0xFF0A84FF)
                 ),
                 start = Offset(0f, 0f),
                 end = Offset(w, h)
@@ -85,101 +84,81 @@ fun SynapseNeonLogo(
             style = Stroke(width = w * 0.045f)
         )
 
-        // 4. 3D Liquid Glass 'S' Ribbon Path
-        val sRibbonPath = Path().apply {
-            moveTo(w * 0.67f, h * 0.31f)
+        // 4. Stylized Beatify 'B' & Acoustic Pulse Stem
+        val bPath = Path().apply {
+            moveTo(w * 0.34f, h * 0.24f)
+            lineTo(w * 0.34f, h * 0.76f)
+            moveTo(w * 0.34f, h * 0.24f)
             cubicTo(
-                w * 0.63f, h * 0.20f,
-                w * 0.34f, h * 0.19f,
-                w * 0.33f, h * 0.35f
+                w * 0.66f, h * 0.22f,
+                w * 0.68f, h * 0.47f,
+                w * 0.38f, h * 0.49f
             )
             cubicTo(
-                w * 0.32f, h * 0.49f,
-                w * 0.69f, h * 0.49f,
-                w * 0.68f, h * 0.66f
-            )
-            cubicTo(
-                w * 0.67f, h * 0.81f,
-                w * 0.36f, h * 0.81f,
-                w * 0.32f, h * 0.68f
+                w * 0.72f, h * 0.50f,
+                w * 0.72f, h * 0.78f,
+                w * 0.34f, h * 0.76f
             )
         }
 
-        // Outer Neon Glow around the S ribbon
+        // Outer Crimson/Violet Glow
         drawPath(
-            path = sRibbonPath,
+            path = bPath,
             brush = Brush.verticalGradient(
                 colors = listOf(
-                    Color(0x6600E5FF),
+                    Color(0x66FA2D48),
                     Color(0x667C5CFF),
-                    Color(0x66FA2D48)
-                ),
-                startY = h * 0.18f,
-                endY = h * 0.82f
-            ),
-            style = Stroke(
-                width = w * 0.22f,
-                cap = StrokeCap.Round,
-                join = StrokeJoin.Round
-            )
-        )
-
-        // Core Liquid Glass S Ribbon Body
-        drawPath(
-            path = sRibbonPath,
-            brush = Brush.linearGradient(
-                colors = listOf(
-                    Color(0xFF00F0FF),
-                    Color(0xFF0A84FF),
-                    Color(0xFF7C5CFF),
-                    Color(0xFFE01E5A),
-                    Color(0xFFFF4D6D)
-                ),
-                start = Offset(w * 0.35f, h * 0.20f),
-                end = Offset(w * 0.65f, h * 0.82f)
-            ),
-            style = Stroke(
-                width = w * 0.155f,
-                cap = StrokeCap.Round,
-                join = StrokeJoin.Round
-            )
-        )
-
-        // 5. Crisp White Translucent Glass Specular Highlight along the S spine
-        val highlightPath = Path().apply {
-            moveTo(w * 0.64f, h * 0.29f)
-            cubicTo(
-                w * 0.59f, h * 0.21f,
-                w * 0.36f, h * 0.22f,
-                w * 0.35f, h * 0.35f
-            )
-            cubicTo(
-                w * 0.34f, h * 0.47f,
-                w * 0.66f, h * 0.48f,
-                w * 0.65f, h * 0.65f
-            )
-            cubicTo(
-                w * 0.64f, h * 0.77f,
-                w * 0.40f, h * 0.78f,
-                w * 0.35f, h * 0.67f
-            )
-        }
-
-        drawPath(
-            path = highlightPath,
-            brush = Brush.verticalGradient(
-                colors = listOf(
-                    Color(0xEEFFFFFF),
-                    Color(0x88C8B6FF),
-                    Color(0xCCFFB3C6)
+                    Color(0x660A84FF)
                 ),
                 startY = h * 0.20f,
                 endY = h * 0.80f
             ),
             style = Stroke(
-                width = w * 0.038f,
+                width = w * 0.19f,
                 cap = StrokeCap.Round,
                 join = StrokeJoin.Round
+            )
+        )
+
+        // Core Liquid Glass 'B' Ribbon Body
+        drawPath(
+            path = bPath,
+            brush = Brush.linearGradient(
+                colors = listOf(
+                    Color(0xFFFF4D6D),
+                    Color(0xFFFA2D48),
+                    Color(0xFF7C5CFF),
+                    Color(0xFF0A84FF)
+                ),
+                start = Offset(w * 0.30f, h * 0.22f),
+                end = Offset(w * 0.70f, h * 0.78f)
+            ),
+            style = Stroke(
+                width = w * 0.125f,
+                cap = StrokeCap.Round,
+                join = StrokeJoin.Round
+            )
+        )
+
+        // 5. Crisp White Specular Highlight along the top loop
+        val highlightPath = Path().apply {
+            moveTo(w * 0.34f, h * 0.26f)
+            lineTo(w * 0.34f, h * 0.72f)
+        }
+        drawPath(
+            path = highlightPath,
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    Color(0xEEFFFFFF),
+                    Color(0x88FFB3C6),
+                    Color.Transparent
+                ),
+                startY = h * 0.24f,
+                endY = h * 0.74f
+            ),
+            style = Stroke(
+                width = w * 0.035f,
+                cap = StrokeCap.Round
             )
         )
     }

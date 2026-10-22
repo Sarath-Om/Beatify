@@ -42,9 +42,12 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `app_name string resource matches Synapse Music`() {
+    fun `app_name string resource matches Beatify`() {
         val appName = context.getString(R.string.app_name)
-        assertEquals("Synapse Music", appName)
+        assertEquals("Beatify", appName)
+        assertEquals(5, com.example.data.MusicDestination.entries.size)
+        assertTrue(BundledMusicCatalog.defaultRadioStations().isNotEmpty())
+        assertTrue(BundledMusicCatalog.defaultPodcastEpisodes().isNotEmpty())
     }
 
     @Test

@@ -40,19 +40,51 @@ beforeEach(async () => {
   }
 });
 
-test("Unauthenticated user: cannot read or write playlists, favorites, subscriptions, preferences, or playbackProgress", async () => {
+// 1. An unauthenticated user cannot read or write protected user data
+test("1. Unauthenticated user cannot read or write protected user data", async () => {
   const unauthDb = testEnv.unauthenticatedContext().firestore();
+  const now = new Date();
+
   await assertFails(
     unauthDb.collection("users").doc(ALICE_UID).collection("playlists").get()
   );
   await assertFails(
+    unauthDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("playlists")
+      .doc("pl_1")
+      .set({
+        name: "Unauthorized",
+        trackIds: ["t1"],
+        createdAt: now,
+        updatedAt: now,
+        revision: 1,
+      })
+  );
+  await assertFails(
     unauthDb.collection("users").doc(ALICE_UID).collection("favorites").get()
+  );
+  await assertFails(
+    unauthDb.collection("users").doc(ALICE_UID).collection("subscriptions").get()
+  );
+  await assertFails(
+    unauthDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("preferences")
+      .doc("app")
+      .get()
+  );
+  await assertFails(
+    unauthDb.collection("users").doc(ALICE_UID).collection("devices").get()
   );
 });
 
-test("Authenticated user: can create, read, update, and delete their own playlist", async () => {
+// 2. User A can access their own playlists
+test("2. User A can create, read, update, and delete their own playlists", async () => {
   const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
-  const now = new Date();
+  const createdAt = new Date();
   const docRef = aliceDb
     .collection("users")
     .doc(ALICE_UID)
@@ -61,158 +93,386 @@ test("Authenticated user: can create, read, update, and delete their own playlis
 
   await assertSucceeds(
     docRef.set({
-      userId: ALICE_UID,
       name: "Midnight Synthwave",
-      description: "Spatial mixes",
-      trackIdsCsv: "demo_midnight_synapse,demo_neon_horizon",
-      createdAt: now,
-      updatedAt: now,
+      description: "Spatial Audio Mix",
+      trackIds: ["demo_midnight_synapse", "demo_neon_horizon"],
+      createdAt,
+      updatedAt: createdAt,
+      revision: 1,
     })
   );
 
   await assertSucceeds(docRef.get());
 
   await assertSucceeds(
-    aliceDb
-      .collection("users")
-      .doc(ALICE_UID)
-      .collection("playlists")
-      .where("userId", "==", ALICE_UID)
-      .get()
-  );
-
-  await assertSucceeds(
     docRef.update({
-      name: "Midnight Synthwave Deluxe",
+      name: "Midnight Synthwave v2",
+      trackIds: ["demo_midnight_synapse"],
       updatedAt: new Date(),
+      revision: 2,
     })
   );
+
+  await assertSucceeds(docRef.delete());
 });
 
-test("Cross-user isolation: Bob cannot read, update, or delete Alice's playlists or favorites", async () => {
+// 3. User A cannot read User B's playlists
+test("3. User A cannot read or modify User B's playlists", async () => {
   const now = new Date();
   await testEnv.withSecurityRulesDisabled(async (ctx) => {
     await ctx
       .firestore()
       .collection("users")
-      .doc(ALICE_UID)
-      .collection("favorites")
-      .doc("fav_track_1")
+      .doc(BOB_UID)
+      .collection("playlists")
+      .doc("bob_pl")
       .set({
-        userId: ALICE_UID,
-        itemId: "demo_midnight_synapse",
+        name: "Bob Secret Mix",
+        trackIds: ["track_1"],
+        createdAt: now,
+        updatedAt: now,
+        revision: 1,
+      });
+  });
+
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobPlaylistRef = aliceDb
+    .collection("users")
+    .doc(BOB_UID)
+    .collection("playlists")
+    .doc("bob_pl");
+
+  await assertFails(bobPlaylistRef.get());
+  await assertFails(
+    bobPlaylistRef.update({
+      name: "Hacked",
+      updatedAt: new Date(),
+      revision: 2,
+    })
+  );
+  await assertFails(bobPlaylistRef.delete());
+});
+
+// 4. User A cannot create, modify, or delete User B's favorites
+test("4. User A cannot create, modify, or delete User B's favorites", async () => {
+  const now = new Date();
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx
+      .firestore()
+      .collection("users")
+      .doc(BOB_UID)
+      .collection("favorites")
+      .doc("track_1")
+      .set({
+        trackId: "track_1",
         title: "Midnight Synapse",
-        subtitle: "Aether & Kora",
-        itemType: "track",
+        artist: "Aether",
+        addedAt: now,
+      });
+  });
+
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobFavRef = aliceDb
+    .collection("users")
+    .doc(BOB_UID)
+    .collection("favorites")
+    .doc("track_1");
+
+  await assertFails(bobFavRef.get());
+  await assertFails(
+    bobFavRef.set({
+      trackId: "track_1",
+      title: "Spoofed",
+      addedAt: new Date(),
+    })
+  );
+  await assertFails(bobFavRef.delete());
+});
+
+// 5. Users cannot access another user's subscriptions, preferences, or devices
+test("5. Users cannot access another user's subscriptions, preferences, or devices", async () => {
+  const now = new Date();
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx
+      .firestore()
+      .collection("users")
+      .doc(BOB_UID)
+      .collection("subscriptions")
+      .doc("sub_1")
+      .set({
+        provider: "podcast",
+        resourceId: "pod_waveform",
+        title: "Waveform",
+        subscribedAt: now,
+      });
+    await ctx
+      .firestore()
+      .collection("users")
+      .doc(BOB_UID)
+      .collection("preferences")
+      .doc("app")
+      .set({
+        shuffleEnabled: true,
+        repeatMode: "all",
+        playbackSpeed: 1.0,
+        crossfadeEnabled: true,
+        updatedAt: now,
+      });
+    await ctx
+      .firestore()
+      .collection("users")
+      .doc(BOB_UID)
+      .collection("devices")
+      .doc("dev_bob")
+      .set({
+        tokenRef: "sha256_bob_device_token_1234",
+        platform: "android",
+        appVersion: "1.0.0",
+        active: true,
+        notificationCategories: ["music", "podcasts"],
+        marketingOptIn: false,
         createdAt: now,
         updatedAt: now,
       });
   });
 
-  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
-  const aliceFavRef = bobDb
-    .collection("users")
-    .doc(ALICE_UID)
-    .collection("favorites")
-    .doc("fav_track_1");
-
-  await assertFails(aliceFavRef.get());
-  await assertFails(aliceFavRef.delete());
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  await assertFails(
+    aliceDb
+      .collection("users")
+      .doc(BOB_UID)
+      .collection("subscriptions")
+      .doc("sub_1")
+      .get()
+  );
+  await assertFails(
+    aliceDb
+      .collection("users")
+      .doc(BOB_UID)
+      .collection("preferences")
+      .doc("app")
+      .get()
+  );
+  await assertFails(
+    aliceDb
+      .collection("users")
+      .doc(BOB_UID)
+      .collection("devices")
+      .doc("dev_bob")
+      .get()
+  );
 });
 
-test("Shadow update & schema validation: rejects ghost fields and invalid media types", async () => {
+// 6. Invalid fields and unexpected document fields are rejected
+test("6. Invalid fields and unexpected document fields are rejected", async () => {
   const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
   const now = new Date();
 
-  // Ghost field 'isAdmin' must be rejected
+  // Unknown field 'isAdmin' on favorite
   await assertFails(
     aliceDb
       .collection("users")
       .doc(ALICE_UID)
       .collection("favorites")
-      .doc("fav_bad")
+      .doc("track_1")
       .set({
-        userId: ALICE_UID,
-        itemId: "track_1",
-        title: "Track 1",
-        subtitle: "Artist",
-        itemType: "track",
+        trackId: "track_1",
+        addedAt: now,
         isAdmin: true,
-        createdAt: now,
-        updatedAt: now,
       })
   );
 
-  // Invalid itemType enum must be rejected
+  // Invalid provider enum on subscription
   await assertFails(
-    aliceDb
-      .collection("users")
-      .doc(ALICE_UID)
-      .collection("favorites")
-      .doc("fav_bad_enum")
-      .set({
-        userId: ALICE_UID,
-        itemId: "track_1",
-        title: "Track 1",
-        subtitle: "Artist",
-        itemType: "unsupported_type",
-        createdAt: now,
-        updatedAt: now,
-      })
-  );
-});
-
-test("Subscriptions, Preferences, and PlaybackProgress enforce per-user schema", async () => {
-  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
-  const now = new Date();
-
-  await assertSucceeds(
     aliceDb
       .collection("users")
       .doc(ALICE_UID)
       .collection("subscriptions")
-      .doc("sub_podcast_1")
+      .doc("sub_bad")
       .set({
-        userId: ALICE_UID,
-        showId: "pod_waveform",
-        title: "Waveform Tech Podcast",
-        publisher: "Vox Media",
-        feedUrl: "https://feeds.megaphone.fm/waveform",
-        artworkUrl: "https://images.unsplash.com/photo-1590602847861-f357a9332bbc",
-        createdAt: now,
-        updatedAt: now,
+        provider: "pirate_stream",
+        resourceId: "res_1",
+        subscribedAt: now,
       })
   );
 
-  await assertSucceeds(
+  // Preferences under arbitrary doc ID ('custom' instead of 'app') rejected
+  await assertFails(
     aliceDb
       .collection("users")
       .doc(ALICE_UID)
       .collection("preferences")
-      .doc("user_prefs")
+      .doc("custom")
       .set({
-        userId: ALICE_UID,
-        audioQuality: "LOSSLESS",
-        gaplessPlayback: true,
-        otaChannel: "stable",
-        analyticsConsent: false,
-        createdAt: now,
+        shuffleEnabled: false,
+        repeatMode: "off",
+        playbackSpeed: 1.0,
+        crossfadeEnabled: false,
         updatedAt: now,
       })
   );
+});
+
+// 7. Invalid playback speeds and repeat modes are rejected
+test("7. Invalid playback speeds and repeat modes are rejected", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const prefRef = aliceDb
+    .collection("users")
+    .doc(ALICE_UID)
+    .collection("preferences")
+    .doc("app");
+  const now = new Date();
+
+  await assertFails(
+    prefRef.set({
+      shuffleEnabled: false,
+      repeatMode: "off",
+      playbackSpeed: 3.5,
+      crossfadeEnabled: false,
+      updatedAt: now,
+    })
+  );
+
+  await assertFails(
+    prefRef.set({
+      shuffleEnabled: false,
+      repeatMode: "off",
+      playbackSpeed: 0.2,
+      crossfadeEnabled: false,
+      updatedAt: now,
+    })
+  );
+
+  await assertFails(
+    prefRef.set({
+      shuffleEnabled: false,
+      repeatMode: "infinite",
+      playbackSpeed: 1.0,
+      crossfadeEnabled: false,
+      updatedAt: now,
+    })
+  );
 
   await assertSucceeds(
+    prefRef.set({
+      shuffleEnabled: true,
+      repeatMode: "all",
+      playbackSpeed: 1.25,
+      crossfadeEnabled: true,
+      updatedAt: now,
+    })
+  );
+});
+
+// 8 & 9. Playlist creation and updates enforce timestamp, revision, and immutable createdAt
+test("8 & 9. Playlist creation and updates enforce timestamp, revision, and immutable createdAt", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const docRef = aliceDb
+    .collection("users")
+    .doc(ALICE_UID)
+    .collection("playlists")
+    .doc("pl_rev_test");
+  const initialCreatedAt = new Date(Date.now() - 5000);
+
+  await assertFails(
+    docRef.set({
+      name: "Bad Revision",
+      trackIds: ["t1"],
+      createdAt: initialCreatedAt,
+      updatedAt: initialCreatedAt,
+      revision: 5,
+    })
+  );
+
+  await assertSucceeds(
+    docRef.set({
+      name: "Good Playlist",
+      trackIds: ["t1"],
+      createdAt: initialCreatedAt,
+      updatedAt: initialCreatedAt,
+      revision: 1,
+    })
+  );
+
+  await assertFails(
+    docRef.update({
+      name: "Skipped Revision",
+      updatedAt: new Date(),
+      revision: 3,
+    })
+  );
+
+  await assertFails(
+    docRef.update({
+      name: "Mutated CreatedAt",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      revision: 2,
+    })
+  );
+
+  await assertSucceeds(
+    docRef.update({
+      name: "Updated Playlist",
+      updatedAt: new Date(),
+      revision: 2,
+    })
+  );
+});
+
+// 10, 11, 12. Deterministic favorites, FCM device registration validation, and UID spoofing prevention
+test("10, 11, 12. Deterministic favorites, FCM device registration, and UID spoofing prevention", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const now = new Date();
+
+  const devRef = aliceDb
+    .collection("users")
+    .doc(ALICE_UID)
+    .collection("devices")
+    .doc("android_pixel_9");
+
+  await assertSucceeds(
+    devRef.set({
+      tokenRef: "sha256_token_ref_9876543210",
+      platform: "android",
+      appVersion: "1.0.0",
+      active: true,
+      notificationCategories: ["account", "music", "podcasts", "updates"],
+      marketingOptIn: false,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Attempting to write privileged field 'isPremium' to device doc fails
+  await assertFails(
+    devRef.set({
+      tokenRef: "sha256_token_ref_9876543210",
+      platform: "android",
+      appVersion: "1.0.0",
+      active: true,
+      notificationCategories: ["music"],
+      marketingOptIn: false,
+      isPremium: true,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Client-side UID spoofing into another user's path fails
+  await assertFails(
     aliceDb
       .collection("users")
-      .doc(ALICE_UID)
-      .collection("playbackProgress")
-      .doc("prog_ep_1")
+      .doc(BOB_UID)
+      .collection("devices")
+      .doc("spoofed")
       .set({
-        userId: ALICE_UID,
-        mediaId: "ep_101",
-        mediaType: "episode",
-        positionMs: 45000,
-        durationMs: 1800000,
+        tokenRef: "sha256_token_ref_9876543210",
+        platform: "android",
+        appVersion: "1.0.0",
+        active: true,
+        notificationCategories: ["music"],
+        marketingOptIn: false,
         createdAt: now,
         updatedAt: now,
       })

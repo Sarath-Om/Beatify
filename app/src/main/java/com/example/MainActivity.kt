@@ -19,8 +19,10 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,6 +33,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
@@ -43,24 +46,30 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.components.BeatifyAuthOverlay
 import com.example.components.NowPlayingFullScreenOverlay
 import com.example.components.SynapseBottomChrome
 import com.example.data.MusicDestination
 import com.example.features.home.MusicHomeScreen
 import com.example.features.library.MusicLibraryScreen
+import com.example.features.radio.MusicRadioScreen
 import com.example.features.search.MusicSearchScreen
 import com.example.features.settings.MusicSettingsScreen
+import com.example.ui.theme.BeatifyAppleCrimson
 import com.example.ui.theme.HighlightFavoritePink
 import com.example.ui.theme.LabelPrimary
 import com.example.ui.theme.MainSurface
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.OledBlack
+import com.example.ui.theme.SecondaryTextZinc
 
 class MainActivity : ComponentActivity() {
 
@@ -69,7 +78,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        handleIncomingAudioIntent(intent)
+        handleIncomingIntent(intent)
 
         setContent {
             MyApplicationTheme {
@@ -80,12 +89,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        handleIncomingAudioIntent(intent)
+        handleIncomingIntent(intent)
     }
 
-    private fun handleIncomingAudioIntent(intent: Intent?) {
+    private fun handleIncomingIntent(intent: Intent?) {
         val dataUri = intent?.data ?: return
-        if (intent.action == Intent.ACTION_VIEW) {
+        val scheme = dataUri.scheme?.lowercase()
+        if (scheme == "beatify") {
+            viewModel.handleDeepLinkUri(dataUri.toString())
+        } else if (intent.action == Intent.ACTION_VIEW) {
             viewModel.importLocalAudioUris(listOf(dataUri), playImmediately = true)
         }
     }
@@ -99,6 +111,22 @@ fun SynapseMusicApp(viewModel: SynapseViewModel) {
     val selectedLibraryCategory by viewModel.selectedLibraryCategory.collectAsStateWithLifecycle()
     val sortOption by viewModel.sortOption.collectAsStateWithLifecycle()
     val isNowPlayingExpanded by viewModel.isNowPlayingExpanded.collectAsStateWithLifecycle()
+    val isAuthSheetVisible by viewModel.isAuthSheetVisible.collectAsStateWithLifecycle()
+    val isAuthenticating by viewModel.isAuthenticating.collectAsStateWithLifecycle()
+    val authErrorMessage by viewModel.authErrorMessage.collectAsStateWithLifecycle()
+
+    val currentUserUid by viewModel.currentUserUid.collectAsStateWithLifecycle()
+    val currentUserEmail by viewModel.currentUserEmail.collectAsStateWithLifecycle()
+    val currentUserDisplayName by viewModel.currentUserDisplayName.collectAsStateWithLifecycle()
+    val syncStatus by viewModel.syncStatus.collectAsStateWithLifecycle()
+    val subscriptions by viewModel.subscriptions.collectAsStateWithLifecycle()
+    val radioStations by viewModel.radioStations.collectAsStateWithLifecycle()
+    val podcastEpisodes by viewModel.podcastEpisodes.collectAsStateWithLifecycle()
+    val otaManifest by viewModel.otaManifest.collectAsStateWithLifecycle()
+    val notificationCategories by viewModel.notificationCategories.collectAsStateWithLifecycle()
+    val marketingOptIn by viewModel.marketingOptIn.collectAsStateWithLifecycle()
+    val pushNotifications by viewModel.pushNotifications.collectAsStateWithLifecycle()
+    val activeForegroundBanner by viewModel.activeForegroundBanner.collectAsStateWithLifecycle()
 
     val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
     val allTracks by viewModel.allTracks.collectAsStateWithLifecycle()
@@ -160,7 +188,11 @@ fun SynapseMusicApp(viewModel: SynapseViewModel) {
         )
     }
 
-    if (currentDestination != MusicDestination.HOME && !isNowPlayingExpanded) {
+    if (isAuthSheetVisible) {
+        BackHandler {
+            viewModel.closeAuthSheet()
+        }
+    } else if (currentDestination != MusicDestination.HOME && !isNowPlayingExpanded) {
         BackHandler {
             viewModel.selectDestination(MusicDestination.HOME)
         }
@@ -201,6 +233,7 @@ fun SynapseMusicApp(viewModel: SynapseViewModel) {
                             albums = albums,
                             playlists = playlists,
                             playbackState = playbackState,
+                            currentUserUid = currentUserUid,
                             onPlayTrackFromList = { track, list ->
                                 viewModel.playTrackFromList(track, list)
                             },
@@ -217,9 +250,13 @@ fun SynapseMusicApp(viewModel: SynapseViewModel) {
                             onNavigateToSearch = {
                                 viewModel.selectDestination(MusicDestination.SEARCH)
                             },
+                            onNavigateToRadio = {
+                                viewModel.selectDestination(MusicDestination.RADIO)
+                            },
                             onNavigateToSettings = {
                                 viewModel.selectDestination(MusicDestination.SETTINGS)
                             },
+                            onOpenAuthSheet = { viewModel.openAuthSheet() },
                             onOpenNowPlaying = { viewModel.openNowPlaying() }
                         )
                     }
@@ -242,6 +279,20 @@ fun SynapseMusicApp(viewModel: SynapseViewModel) {
                             onAddToQueue = { viewModel.addToQueueEnd(it) },
                             onAddToPlaylist = { playlistId, track ->
                                 viewModel.addTrackToPlaylist(playlistId, track)
+                            }
+                        )
+                    }
+
+                    MusicDestination.RADIO -> {
+                        MusicRadioScreen(
+                            radioStations = radioStations,
+                            podcastEpisodes = podcastEpisodes,
+                            subscriptions = subscriptions,
+                            playbackState = playbackState,
+                            onPlayRadioStation = { viewModel.playRadioStation(it) },
+                            onPlayPodcastEpisode = { viewModel.playPodcastEpisode(it) },
+                            onToggleSubscription = { provider, resourceId, title ->
+                                viewModel.toggleSubscription(provider, resourceId, title)
                             }
                         )
                     }
@@ -287,6 +338,23 @@ fun SynapseMusicApp(viewModel: SynapseViewModel) {
                             protectionReport = protectionReport,
                             notificationPermissionGranted = notificationPermissionGranted,
                             statusMessage = settingsStatusMessage,
+                            currentUserUid = currentUserUid,
+                            currentUserEmail = currentUserEmail,
+                            currentUserDisplayName = currentUserDisplayName,
+                            syncStatus = syncStatus,
+                            otaManifest = otaManifest,
+                            notificationCategories = notificationCategories,
+                            marketingOptIn = marketingOptIn,
+                            pushNotifications = pushNotifications,
+                            onOpenAuthSheet = { viewModel.openAuthSheet() },
+                            onTriggerCloudSync = { viewModel.syncLocalDataToCloudNow() },
+                            onCheckOtaUpdate = { viewModel.checkForOtaUpdate() },
+                            onSwitchOtaChannel = { viewModel.switchOtaChannel(it) },
+                            onRollbackOtaBundle = { viewModel.rollbackOtaBundle() },
+                            onToggleNotificationCategory = { viewModel.toggleNotificationCategory(it) },
+                            onToggleMarketingOptIn = { viewModel.setMarketingOptIn(it) },
+                            onTriggerSampleNotification = { viewModel.triggerSampleFcmNotification(it) },
+                            onNavigateDeepLink = { viewModel.handleDeepLinkUri(it) },
                             onSelectAudioQuality = { viewModel.setAudioQuality(it) },
                             onToggleGaplessPlayback = { viewModel.setGaplessPlayback(it) },
                             onSetSleepTimerMinutes = { viewModel.setSleepTimerMinutes(it) },
@@ -301,6 +369,59 @@ fun SynapseMusicApp(viewModel: SynapseViewModel) {
                             onAddCustomBlockedDomain = { viewModel.addCustomBlockedDomain(it) },
                             onRemoveCustomBlockedDomain = { viewModel.removeCustomBlockedDomain(it) }
                         )
+                    }
+                }
+
+                // Foreground FCM Push Notification Banner (tappable deep-link routing)
+                val fgBanner = activeForegroundBanner
+                if (fgBanner != null) {
+                    Surface(
+                        color = MainSurface,
+                        shape = RoundedCornerShape(18.dp),
+                        shadowElevation = 12.dp,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .statusBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .fillMaxWidth()
+                            .border(1.dp, BeatifyAppleCrimson, RoundedCornerShape(18.dp))
+                            .clip(RoundedCornerShape(18.dp))
+                            .clickable { viewModel.handleDeepLinkUri(fgBanner.deepLink) }
+                            .testTag("foreground_fcm_banner")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.NotificationsActive,
+                                contentDescription = null,
+                                tint = BeatifyAppleCrimson
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = fgBanner.title,
+                                    color = LabelPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = fgBanner.body,
+                                    color = SecondaryTextZinc,
+                                    fontSize = 11.sp
+                                )
+                            }
+                            IconButton(
+                                onClick = { viewModel.dismissForegroundBanner() }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Dismiss Notification",
+                                    tint = LabelPrimary
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -380,6 +501,26 @@ fun SynapseMusicApp(viewModel: SynapseViewModel) {
                 onClearUpcomingQueue = {
                     viewModel.clearUpcomingQueue()
                 }
+            )
+        }
+
+        // Google Sign-In & Cloud Sync Overlay
+        AnimatedVisibility(
+            visible = isAuthSheetVisible,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            BeatifyAuthOverlay(
+                currentUserUid = currentUserUid,
+                currentUserEmail = currentUserEmail,
+                currentUserDisplayName = currentUserDisplayName,
+                isAuthenticating = isAuthenticating,
+                authErrorMessage = authErrorMessage,
+                syncStatus = syncStatus,
+                onContinueWithGoogle = { viewModel.startGoogleSignIn(context) },
+                onSignOut = { viewModel.signOut(context) },
+                onTriggerManualSync = { viewModel.syncLocalDataToCloudNow() },
+                onContinueWithoutAccount = { viewModel.closeAuthSheet() }
             )
         }
     }

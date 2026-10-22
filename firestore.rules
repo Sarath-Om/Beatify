@@ -1,194 +1,228 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Global safety net: deny all by default
+    function signedInAs(uid) {
+      return request.auth != null
+        && request.auth.uid == uid;
+    }
+
+    function validPlaylist(data) {
+      return data.keys().hasAll([
+          'name',
+          'trackIds',
+          'createdAt',
+          'updatedAt',
+          'revision'
+        ])
+        && data.keys().hasOnly([
+          'name',
+          'description',
+          'trackIds',
+          'createdAt',
+          'updatedAt',
+          'revision'
+        ])
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 100
+        && (!('description' in data) || (data.description is string && data.description.size() <= 500))
+        && data.trackIds is list
+        && data.trackIds.size() <= 500
+        && data.createdAt is timestamp
+        && data.createdAt <= request.time
+        && data.updatedAt is timestamp
+        && data.updatedAt <= request.time
+        && data.revision is int
+        && data.revision >= 1;
+    }
+
+    function validFavorite(data) {
+      return data.keys().hasOnly([
+          'trackId',
+          'title',
+          'artist',
+          'artworkUri',
+          'addedAt'
+        ])
+        && data.keys().hasAll([
+          'trackId',
+          'addedAt'
+        ])
+        && data.trackId is string
+        && data.trackId.size() > 0
+        && data.trackId.size() <= 200
+        && (!('title' in data) || (data.title is string && data.title.size() <= 200))
+        && (!('artist' in data) || (data.artist is string && data.artist.size() <= 200))
+        && (!('artworkUri' in data) || (data.artworkUri is string && data.artworkUri.size() <= 1000))
+        && data.addedAt is timestamp
+        && data.addedAt <= request.time;
+    }
+
+    function validSubscription(data) {
+      return data.keys().hasOnly([
+          'provider',
+          'resourceId',
+          'title',
+          'subscribedAt'
+        ])
+        && data.keys().hasAll([
+          'provider',
+          'resourceId',
+          'subscribedAt'
+        ])
+        && data.provider is string
+        && data.provider in ['podcast', 'radio', 'music']
+        && data.resourceId is string
+        && data.resourceId.size() > 0
+        && data.resourceId.size() <= 200
+        && (!('title' in data) || (data.title is string && data.title.size() <= 200))
+        && data.subscribedAt is timestamp
+        && data.subscribedAt <= request.time;
+    }
+
+    function validPreferences(data) {
+      return data.keys().hasOnly([
+          'shuffleEnabled',
+          'repeatMode',
+          'playbackSpeed',
+          'crossfadeEnabled',
+          'updatedAt'
+        ])
+        && data.keys().hasAll([
+          'shuffleEnabled',
+          'repeatMode',
+          'playbackSpeed',
+          'crossfadeEnabled',
+          'updatedAt'
+        ])
+        && data.shuffleEnabled is bool
+        && data.repeatMode in [
+          'off',
+          'one',
+          'all'
+        ]
+        && (data.playbackSpeed is int || data.playbackSpeed is float)
+        && data.playbackSpeed >= 0.5
+        && data.playbackSpeed <= 2.0
+        && data.crossfadeEnabled is bool
+        && data.updatedAt is timestamp
+        && data.updatedAt <= request.time;
+    }
+
+    function validDeviceRegistration(data) {
+      return data.keys().hasOnly([
+          'tokenRef',
+          'platform',
+          'appVersion',
+          'active',
+          'notificationCategories',
+          'marketingOptIn',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasAll([
+          'tokenRef',
+          'platform',
+          'appVersion',
+          'active',
+          'notificationCategories',
+          'marketingOptIn',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.tokenRef is string
+        && data.tokenRef.size() >= 8
+        && data.tokenRef.size() <= 256
+        && data.platform is string
+        && data.platform in ['android', 'web', 'ios']
+        && data.appVersion is string
+        && data.appVersion.size() > 0
+        && data.appVersion.size() <= 60
+        && data.active is bool
+        && data.notificationCategories is list
+        && data.notificationCategories.size() <= 10
+        && data.marketingOptIn is bool
+        && data.createdAt is timestamp
+        && data.createdAt <= request.time
+        && data.updatedAt is timestamp
+        && data.updatedAt <= request.time;
+    }
+
+    match /users/{uid}/playlists/{playlistId} {
+      allow read: if signedInAs(uid);
+
+      allow create: if signedInAs(uid)
+        && validPlaylist(request.resource.data)
+        && request.resource.data.revision == 1;
+
+      allow update: if signedInAs(uid)
+        && validPlaylist(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.revision == resource.data.revision + 1;
+
+      allow delete: if signedInAs(uid);
+    }
+
+    match /users/{uid}/favorites/{trackId} {
+      allow read: if signedInAs(uid);
+
+      allow create: if signedInAs(uid)
+        && validFavorite(request.resource.data)
+        && request.resource.data.trackId == trackId;
+
+      allow update: if signedInAs(uid)
+        && validFavorite(request.resource.data)
+        && request.resource.data.trackId == trackId
+        && request.resource.data.addedAt == resource.data.addedAt;
+
+      allow delete: if signedInAs(uid);
+    }
+
+    match /users/{uid}/subscriptions/{subscriptionId} {
+      allow read: if signedInAs(uid);
+
+      allow create: if signedInAs(uid)
+        && validSubscription(request.resource.data);
+
+      allow update: if signedInAs(uid)
+        && validSubscription(request.resource.data)
+        && request.resource.data.provider == resource.data.provider
+        && request.resource.data.resourceId == resource.data.resourceId
+        && request.resource.data.subscribedAt == resource.data.subscribedAt;
+
+      allow delete: if signedInAs(uid);
+    }
+
+    match /users/{uid}/preferences/{preferenceId} {
+      allow read: if signedInAs(uid)
+        && preferenceId == 'app';
+
+      allow create, update: if signedInAs(uid)
+        && preferenceId == 'app'
+        && validPreferences(request.resource.data);
+
+      allow delete: if signedInAs(uid)
+        && preferenceId == 'app';
+    }
+
+    match /users/{uid}/devices/{deviceId} {
+      allow read: if signedInAs(uid);
+
+      allow create: if signedInAs(uid)
+        && validDeviceRegistration(request.resource.data);
+
+      allow update: if signedInAs(uid)
+        && validDeviceRegistration(request.resource.data)
+        && request.resource.data.platform == resource.data.platform
+        && request.resource.data.createdAt == resource.data.createdAt;
+
+      allow delete: if signedInAs(uid);
+    }
+
     match /{document=**} {
       allow read, write: if false;
-    }
-
-    // Hardened Global Helpers
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    function isValidId(id) {
-      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-
-    // 1. Validation Helper: CloudPlaylist
-    function isValidCloudPlaylist(data, userId) {
-      return data.userId is string && data.userId == userId && data.userId == request.auth.uid &&
-             data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
-             data.description is string && data.description.size() <= 500 &&
-             data.trackIdsCsv is string && data.trackIdsCsv.size() <= 4000 &&
-             data.createdAt is timestamp && data.createdAt <= request.time &&
-             data.updatedAt is timestamp && data.updatedAt <= request.time;
-    }
-
-    // 2. Validation Helper: CloudFavorite
-    function isValidCloudFavorite(data, userId) {
-      return data.userId is string && data.userId == userId && data.userId == request.auth.uid &&
-             data.itemId is string && data.itemId.size() >= 1 && data.itemId.size() <= 160 &&
-             data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
-             data.subtitle is string && data.subtitle.size() <= 200 &&
-             data.itemType is string && data.itemType in ['track', 'podcast', 'radio', 'livetv', 'ytmusic'] &&
-             data.createdAt is timestamp && data.createdAt <= request.time &&
-             data.updatedAt is timestamp && data.updatedAt <= request.time;
-    }
-
-    // 3. Validation Helper: CloudSubscription
-    function isValidCloudSubscription(data, userId) {
-      return data.userId is string && data.userId == userId && data.userId == request.auth.uid &&
-             data.showId is string && data.showId.size() >= 1 && data.showId.size() <= 160 &&
-             data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
-             data.publisher is string && data.publisher.size() <= 200 &&
-             data.feedUrl is string && data.feedUrl.size() >= 8 && data.feedUrl.size() <= 600 &&
-             data.artworkUrl is string && data.artworkUrl.size() <= 600 &&
-             data.createdAt is timestamp && data.createdAt <= request.time &&
-             data.updatedAt is timestamp && data.updatedAt <= request.time;
-    }
-
-    // 4. Validation Helper: CloudPreference
-    function isValidCloudPreference(data, userId) {
-      return data.userId is string && data.userId == userId && data.userId == request.auth.uid &&
-             data.audioQuality is string && data.audioQuality.size() >= 1 && data.audioQuality.size() <= 60 &&
-             data.gaplessPlayback is bool &&
-             data.otaChannel is string && data.otaChannel in ['stable', 'beta', 'canary'] &&
-             data.analyticsConsent is bool &&
-             data.createdAt is timestamp && data.createdAt <= request.time &&
-             data.updatedAt is timestamp && data.updatedAt <= request.time;
-    }
-
-    // 5. Validation Helper: CloudPlaybackProgress
-    function isValidCloudPlaybackProgress(data, userId) {
-      return data.userId is string && data.userId == userId && data.userId == request.auth.uid &&
-             data.mediaId is string && data.mediaId.size() >= 1 && data.mediaId.size() <= 160 &&
-             data.mediaType is string && data.mediaType in ['track', 'episode'] &&
-             data.positionMs is int && data.positionMs >= 0 &&
-             data.durationMs is int && data.durationMs >= 0 &&
-             data.createdAt is timestamp && data.createdAt <= request.time &&
-             data.updatedAt is timestamp && data.updatedAt <= request.time;
-    }
-
-    match /users/{userId} {
-
-      // Collection 1: Playlists
-      match /playlists/{playlistId} {
-        allow get: if isOwner(userId) && isValidId(playlistId);
-        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
-
-        allow create: if isOwner(userId) &&
-                         isValidId(playlistId) &&
-                         incoming().keys().hasAll(['userId', 'name', 'description', 'trackIdsCsv', 'createdAt', 'updatedAt']) &&
-                         incoming().keys().hasOnly(['userId', 'name', 'description', 'trackIdsCsv', 'createdAt', 'updatedAt']) &&
-                         isValidCloudPlaylist(incoming(), userId);
-
-        allow update: if isOwner(userId) &&
-                         isValidId(playlistId) &&
-                         isValidCloudPlaylist(incoming(), userId) &&
-                         incoming().userId == existing().userId &&
-                         incoming().createdAt == existing().createdAt &&
-                         incoming().diff(existing()).affectedKeys().hasOnly(['name', 'description', 'trackIdsCsv', 'updatedAt']);
-
-        allow delete: if isOwner(userId) && isValidId(playlistId);
-      }
-
-      // Collection 2: Favorites
-      match /favorites/{favoriteId} {
-        allow get: if isOwner(userId) && isValidId(favoriteId);
-        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
-
-        allow create: if isOwner(userId) &&
-                         isValidId(favoriteId) &&
-                         incoming().keys().hasAll(['userId', 'itemId', 'title', 'subtitle', 'itemType', 'createdAt', 'updatedAt']) &&
-                         incoming().keys().hasOnly(['userId', 'itemId', 'title', 'subtitle', 'itemType', 'createdAt', 'updatedAt']) &&
-                         isValidCloudFavorite(incoming(), userId);
-
-        allow update: if isOwner(userId) &&
-                         isValidId(favoriteId) &&
-                         isValidCloudFavorite(incoming(), userId) &&
-                         incoming().userId == existing().userId &&
-                         incoming().createdAt == existing().createdAt &&
-                         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'subtitle', 'updatedAt']);
-
-        allow delete: if isOwner(userId) && isValidId(favoriteId);
-      }
-
-      // Collection 3: Subscriptions
-      match /subscriptions/{subscriptionId} {
-        allow get: if isOwner(userId) && isValidId(subscriptionId);
-        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
-
-        allow create: if isOwner(userId) &&
-                         isValidId(subscriptionId) &&
-                         incoming().keys().hasAll(['userId', 'showId', 'title', 'publisher', 'feedUrl', 'artworkUrl', 'createdAt', 'updatedAt']) &&
-                         incoming().keys().hasOnly(['userId', 'showId', 'title', 'publisher', 'feedUrl', 'artworkUrl', 'createdAt', 'updatedAt']) &&
-                         isValidCloudSubscription(incoming(), userId);
-
-        allow update: if isOwner(userId) &&
-                         isValidId(subscriptionId) &&
-                         isValidCloudSubscription(incoming(), userId) &&
-                         incoming().userId == existing().userId &&
-                         incoming().createdAt == existing().createdAt &&
-                         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'publisher', 'feedUrl', 'artworkUrl', 'updatedAt']);
-
-        allow delete: if isOwner(userId) && isValidId(subscriptionId);
-      }
-
-      // Collection 4: Preferences
-      match /preferences/{prefId} {
-        allow get: if isOwner(userId) && isValidId(prefId);
-        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
-
-        allow create: if isOwner(userId) &&
-                         isValidId(prefId) &&
-                         incoming().keys().hasAll(['userId', 'audioQuality', 'gaplessPlayback', 'otaChannel', 'analyticsConsent', 'createdAt', 'updatedAt']) &&
-                         incoming().keys().hasOnly(['userId', 'audioQuality', 'gaplessPlayback', 'otaChannel', 'analyticsConsent', 'createdAt', 'updatedAt']) &&
-                         isValidCloudPreference(incoming(), userId);
-
-        allow update: if isOwner(userId) &&
-                         isValidId(prefId) &&
-                         isValidCloudPreference(incoming(), userId) &&
-                         incoming().userId == existing().userId &&
-                         incoming().createdAt == existing().createdAt &&
-                         incoming().diff(existing()).affectedKeys().hasOnly(['audioQuality', 'gaplessPlayback', 'otaChannel', 'analyticsConsent', 'updatedAt']);
-
-        allow delete: if isOwner(userId) && isValidId(prefId);
-      }
-
-      // Collection 5: PlaybackProgress
-      match /playbackProgress/{progressId} {
-        allow get: if isOwner(userId) && isValidId(progressId);
-        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
-
-        allow create: if isOwner(userId) &&
-                         isValidId(progressId) &&
-                         incoming().keys().hasAll(['userId', 'mediaId', 'mediaType', 'positionMs', 'durationMs', 'createdAt', 'updatedAt']) &&
-                         incoming().keys().hasOnly(['userId', 'mediaId', 'mediaType', 'positionMs', 'durationMs', 'createdAt', 'updatedAt']) &&
-                         isValidCloudPlaybackProgress(incoming(), userId);
-
-        allow update: if isOwner(userId) &&
-                         isValidId(progressId) &&
-                         isValidCloudPlaybackProgress(incoming(), userId) &&
-                         incoming().userId == existing().userId &&
-                         incoming().createdAt == existing().createdAt &&
-                         incoming().diff(existing()).affectedKeys().hasOnly(['positionMs', 'durationMs', 'updatedAt']);
-
-        allow delete: if isOwner(userId) && isValidId(progressId);
-      }
     }
   }
 }
