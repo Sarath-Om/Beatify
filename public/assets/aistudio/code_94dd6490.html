@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Apple Music - Now Playing</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "inverse-on-surface": "#303032",
+            "secondary-container": "#d60133",
+            "error": "#ffb4ab",
+            "on-secondary": "#680013",
+            "surface-variant": "#353437",
+            "primary-fixed-dim": "#aac7ff",
+            "on-surface": "#e4e2e4",
+            "on-tertiary-fixed-variant": "#00531a",
+            "on-primary-fixed-variant": "#00468d",
+            "on-tertiary": "#003910",
+            "tertiary-container": "#00a73e",
+            "tertiary-fixed": "#6cff82",
+            "surface-dim": "#131315",
+            "primary-container": "#3e90ff",
+            "on-secondary-fixed-variant": "#92001f",
+            "background": "#131315",
+            "on-secondary-fixed": "#410008",
+            "primary": "#aac7ff",
+            "on-background": "#e4e2e4",
+            "inverse-primary": "#005db8",
+            "surface-container-lowest": "#0e0e10",
+            "surface-tint": "#aac7ff",
+            "on-error": "#690005",
+            "on-tertiary-container": "#00320d",
+            "outline": "#8b91a0",
+            "surface-container": "#1f1f21",
+            "tertiary-fixed-dim": "#47e266",
+            "surface-bright": "#39393b",
+            "on-surface-variant": "#c0c6d6",
+            "surface-container-high": "#2a2a2c",
+            "surface-container-low": "#1b1b1d",
+            "secondary-fixed": "#ffdad9",
+            "secondary-fixed-dim": "#ffb3b2",
+            "primary-fixed": "#d6e3ff",
+            "error-container": "#93000a",
+            "on-secondary-container": "#ffe7e6",
+            "on-primary-fixed": "#001b3e",
+            "on-error-container": "#ffdad6",
+            "surface-container-highest": "#353437",
+            "tertiary": "#47e266",
+            "outline-variant": "#414754",
+            "surface": "#131315",
+            "on-tertiary-fixed": "#002106",
+            "on-primary-container": "#002957",
+            "on-primary": "#003064",
+            "inverse-surface": "#e4e2e4",
+            "secondary": "#ffb3b2"
+          },
+          "borderRadius": {
+            "DEFAULT": "1rem",
+            "lg": "2rem",
+            "xl": "3rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xl": "2rem",
+            "space-md": "1rem",
+            "space-lg": "1.25rem",
+            "space-sm": "0.5rem",
+            "space-xs": "0.25rem",
+            "gutter": "1rem",
+            "margin": "1rem"
+          },
+          "fontFamily": {
+            "body": ["Plus Jakarta Sans"],
+            "title-2": ["Plus Jakarta Sans"],
+            "callout": ["Plus Jakarta Sans"],
+            "subheadline": ["Plus Jakarta Sans"],
+            "title-3": ["Plus Jakarta Sans"],
+            "caption-2": ["Plus Jakarta Sans"],
+            "caption-1": ["Plus Jakarta Sans"],
+            "display": ["Plus Jakarta Sans"],
+            "title-1": ["Plus Jakarta Sans"],
+            "footnote": ["Plus Jakarta Sans"],
+            "display-mobile": ["Plus Jakarta Sans"],
+            "headline": ["Plus Jakarta Sans"]
+          },
+          "fontSize": {
+            "body": ["17px", {"lineHeight": "22px", "fontWeight": "400"}],
+            "title-2": ["22px", {"lineHeight": "28px", "fontWeight": "600"}],
+            "callout": ["16px", {"lineHeight": "21px", "fontWeight": "400"}],
+            "subheadline": ["15px", {"lineHeight": "20px", "fontWeight": "400"}],
+            "title-3": ["20px", {"lineHeight": "25px", "fontWeight": "600"}],
+            "caption-2": ["11px", {"lineHeight": "13px", "fontWeight": "600"}],
+            "caption-1": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+            "display": ["34px", {"lineHeight": "41px", "fontWeight": "700"}],
+            "title-1": ["28px", {"lineHeight": "34px", "fontWeight": "700"}],
+            "footnote": ["13px", {"lineHeight": "18px", "fontWeight": "400"}],
+            "display-mobile": ["30px", {"lineHeight": "36px", "fontWeight": "700"}],
+            "headline": ["17px", {"lineHeight": "22px", "fontWeight": "600"}]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      line-height: 1;
+      text-transform: none;
+      letter-spacing: normal;
+      word-wrap: normal;
+      white-space: nowrap;
+      direction: ltr;
+    }
+    .material-symbols-outlined[data-weight="fill"] {
+      font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    /* iOS Glassmorphism specular rim */
+    .ios-glass-specular {
+      box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.15), inset 0 -1px 0 0 rgba(0, 0, 0, 0.4);
+    }
+    .ios-thumb-shadow {
+      box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.3);
+    }
+    .ios-cover-glow {
+      box-shadow: 0 24px 60px -10px rgba(214, 1, 51, 0.35), 0 20px 50px -15px rgba(62, 144, 255, 0.3);
+    }
+  </style>
+</head>
+<body class="bg-surface-container-lowest text-on-surface m-0 p-0 font-body antialiased select-none overflow-x-hidden min-h-screen flex justify-center items-center">
+<!-- iPhone 16 Pro Max Mockup Container (Presentation Frame) -->
+<main class="relative w-full max-w-[430px] h-[932px] max-h-screen bg-black overflow-hidden flex flex-col justify-between shadow-2xl md:rounded-[54px] border border-surface-container-high/40">
+<!-- Atmospheric Blurred Artwork Backdrop Glow Layer -->
+<div class="absolute inset-0 pointer-events-none overflow-hidden z-0">
+<img class="absolute -top-24 -left-36 w-[640px] h-[640px] max-w-none object-cover blur-[85px] opacity-40 scale-125 saturate-200" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC2I_ztunh5oVKwQ7d1qroFpM1CSK1Z0nGJqeE2OyzOjgL3zbHchcnK1S-PN6EvNJOizvdAW9xecVWrCwj5RTo_rtY0QLrgqu_bskISyqLhI_c5LOuf5SahikExwEM-EgzQZTmQomhhNbHBw_fUlTrZ6QJhYk9nL_v4ynv_wAAFRzUdfritp-mNhGLqcwP6Agq69dqMwmyqUsnvz60YLQdpNKd9h3bu8Z1vTZkY47J3jWj5bBbl3G7hVg"/>
+<div class="absolute inset-0 bg-gradient-to-b from-black/20 via-black/45 to-black/90"></div>
+</div>
+<!-- Top Safe Area: Shared TopAppBar Component -->
+<header class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-6 h-12 bg-transparent text-on-surface">
+<!-- Time -->
+<span class="text-subheadline font-subheadline font-semibold text-on-surface tracking-tight">9:41</span>
+<!-- Dynamic Island Physical Pill -->
+<div class="w-[124px] h-[34px] bg-black rounded-full flex items-center justify-between px-3 border border-white/10 shadow-inner">
+<div class="w-3.5 h-3.5 rounded-full bg-secondary-container/90 flex items-center justify-center">
+<span class="w-1.5 h-1.5 rounded-full bg-white"></span>
+</div>
+<!-- Micro dynamic equalizer waveform -->
+<div class="flex items-center gap-[2px] h-3">
+<span class="w-[2.5px] h-3 bg-secondary-container rounded-full animate-pulse"></span>
+<span class="w-[2.5px] h-1.5 bg-primary-container rounded-full"></span>
+<span class="w-[2.5px] h-2.5 bg-secondary-container rounded-full animate-pulse"></span>
+</div>
+</div>
+<!-- Leading / Trailing Status Icons as per Shared Component Schema -->
+<div class="flex items-center space-x-1.5 text-on-surface">
+<span class="material-symbols-outlined text-[17px]" data-icon="signal_cellular_alt">signal_cellular_alt</span>
+<span class="material-symbols-outlined text-[15px]" data-icon="wifi">wifi</span>
+<span class="material-symbols-outlined text-[19px] text-tertiary-fixed-dim" data-icon="battery_full">battery_full</span>
+</div>
+</header>
+<!-- Modal Content Canvas -->
+<div class="relative z-10 w-full flex-1 flex flex-col justify-between pt-12 pb-4 px-7">
+<!-- Sheet Drag Handle Indicator -->
+<div class="w-full flex justify-center pt-1.5 pb-2">
+<div class="w-9 h-1.5 rounded-full bg-white/25 active:bg-white/40 transition-colors cursor-grab"></div>
+</div>
+<!-- Top Action Bar -->
+<nav class="flex items-center justify-between w-full h-8 px-1">
+<button aria-label="Collapse sheet" class="w-8 h-8 flex items-center justify-center text-outline hover:text-on-surface transition-colors active:scale-95 duration-150">
+<span class="material-symbols-outlined text-[26px]" data-icon="keyboard_arrow_down">keyboard_arrow_down</span>
+</button>
+<div class="flex flex-col items-center">
+<span class="text-caption-1 font-caption-1 font-semibold text-outline tracking-wider uppercase">Playing from Album</span>
+<span class="text-caption-2 font-caption-2 font-bold text-on-surface/90">Midnight Echoes</span>
+</div>
+<button aria-label="More options" class="w-8 h-8 rounded-full bg-surface-container/60 backdrop-blur-md flex items-center justify-center text-on-surface ios-glass-specular hover:opacity-80 active:scale-90 transition-all">
+<span class="material-symbols-outlined text-[20px]" data-icon="more_horiz">more_horiz</span>
+</button>
+</nav>
+<!-- Center Square Album Art Artwork -->
+<section class="flex-1 flex items-center justify-center py-4">
+<div class="relative w-[310px] h-[310px] rounded-[32px] overflow-hidden ios-cover-glow transition-transform duration-300 active:scale-[0.98]">
+<img class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC2I_ztunh5oVKwQ7d1qroFpM1CSK1Z0nGJqeE2OyzOjgL3zbHchcnK1S-PN6EvNJOizvdAW9xecVWrCwj5RTo_rtY0QLrgqu_bskISyqLhI_c5LOuf5SahikExwEM-EgzQZTmQomhhNbHBw_fUlTrZ6QJhYk9nL_v4ynv_wAAFRzUdfritp-mNhGLqcwP6Agq69dqMwmyqUsnvz60YLQdpNKd9h3bu8Z1vTZkY47J3jWj5bBbl3G7hVg"/>
+<!-- Glass sheen reflection on artwork -->
+<div class="absolute inset-0 rounded-[32px] pointer-events-none border border-white/20"></div>
+</div>
+</section>
+<!-- Track Information & Interactive Favorite Row -->
+<section class="w-full mt-1 mb-2">
+<div class="flex items-center justify-between">
+<div class="flex-1 pr-3 truncate">
+<h1 class="text-title-1 font-title-1 font-bold text-on-surface tracking-tight truncate">Neon Horizon</h1>
+<div class="flex items-center space-x-2 mt-0.5">
+<span class="text-body font-body text-outline font-medium truncate">Solaristics</span>
+<!-- Audio Format Quality Badges -->
+<span class="inline-flex items-center px-1.5 py-[2px] rounded-[4px] bg-surface-variant/80 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">Lossless</span>
+<span class="inline-flex items-center px-1.5 py-[2px] rounded-[4px] bg-surface-variant/80 text-[9px] font-bold text-on-surface-variant uppercase tracking-wider">Master</span>
+</div>
+</div>
+<button aria-label="Favorite track" class="w-10 h-10 rounded-full flex items-center justify-center text-outline hover:text-secondary active:scale-90 transition-transform" id="star-btn">
+<span class="material-symbols-outlined text-[26px] text-secondary" data-icon="star" data-weight="fill">star</span>
+</button>
+</div>
+</section>
+<!-- Scrub Bar (Audio Timeline Progress) -->
+<section class="w-full my-2">
+<div class="relative w-full h-7 flex items-center cursor-pointer group">
+<!-- Track Background -->
+<div class="w-full h-[5px] bg-surface-variant/60 rounded-full overflow-hidden">
+<!-- Filled Progress: 1:42 of 4:00 ≈ 42.5% -->
+<div class="h-full bg-white/95 rounded-full w-[42.5%] transition-all"></div>
+</div>
+<!-- Scrub Thumb Pin -->
+<div class="absolute left-[42.5%] -translate-x-1/2 w-3.5 h-3.5 bg-white rounded-full ios-thumb-shadow group-hover:scale-125 transition-transform"></div>
+</div>
+<!-- Time Markers -->
+<div class="flex justify-between items-center px-0.5 -mt-1 font-mono">
+<span class="text-caption-2 font-caption-2 text-outline tabular-nums">1:42</span>
+<span class="text-caption-2 font-caption-2 text-outline tabular-nums">-2:18</span>
+</div>
+</section>
+<!-- Main Playback Transport Controls -->
+<section class="flex items-center justify-around w-full px-4 my-2">
+<!-- Previous Track Button -->
+<button aria-label="Previous Track" class="w-12 h-12 flex items-center justify-center text-on-surface hover:text-white active:scale-80 transition-transform duration-150">
+<span class="material-symbols-outlined text-[40px]" data-icon="skip_previous" data-weight="fill">skip_previous</span>
+</button>
+<!-- Huge Play/Pause Central Button -->
+<button aria-label="Pause Track" class="w-16 h-16 rounded-full bg-on-surface text-surface-container-lowest flex items-center justify-center hover:opacity-95 active:scale-90 shadow-lg transition-transform duration-150">
+<span class="material-symbols-outlined text-[42px]" data-icon="pause" data-weight="fill">pause</span>
+</button>
+<!-- Next Track Button -->
+<button aria-label="Next Track" class="w-12 h-12 flex items-center justify-center text-on-surface hover:text-white active:scale-80 transition-transform duration-150">
+<span class="material-symbols-outlined text-[40px]" data-icon="skip_next" data-weight="fill">skip_next</span>
+</button>
+</section>
+<!-- Master Volume Slider -->
+<section class="flex items-center space-x-3 w-full px-2 my-2">
+<span class="material-symbols-outlined text-[17px] text-outline" data-icon="volume_down">volume_down</span>
+<div class="relative flex-1 h-6 flex items-center cursor-pointer">
+<div class="w-full h-1 bg-surface-variant/60 rounded-full overflow-hidden">
+<!-- 68% Volume Fill -->
+<div class="h-full bg-white/70 rounded-full w-[68%]"></div>
+</div>
+<div class="absolute left-[68%] -translate-x-1/2 w-3.5 h-3.5 bg-white rounded-full ios-thumb-shadow"></div>
+</div>
+<span class="material-symbols-outlined text-[17px] text-outline" data-icon="volume_up">volume_up</span>
+</section>
+<!-- Bottom Audio Utility & Route Bar -->
+<footer class="flex items-center justify-between w-full px-6 pt-2 pb-1">
+<!-- Lyrics Icon -->
+<button aria-label="Live Lyrics" class="w-10 h-10 flex items-center justify-center text-outline hover:text-on-surface active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-[22px]" data-icon="chat_bubble_outline">chat_bubble_outline</span>
+</button>
+<!-- AirPlay Audio Output Routing Capsule -->
+<button aria-label="AirPlay Device Selection" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-surface-container/80 backdrop-blur-xl border border-white/10 ios-glass-specular text-on-surface hover:bg-surface-container-high/90 active:scale-95 transition-all">
+<span class="material-symbols-outlined text-[17px] text-primary" data-icon="airplay">airplay</span>
+<span class="text-caption-1 font-caption-1 font-semibold tracking-tight text-on-surface">AirPods Pro</span>
+</button>
+<!-- Up Next Playlist Queue Icon -->
+<button aria-label="Playing Queue" class="w-10 h-10 flex items-center justify-center text-outline hover:text-on-surface active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-[22px]" data-icon="queue_music">queue_music</span>
+</button>
+</footer>
+<!-- iOS Home Indicator -->
+<div class="w-full flex justify-center pt-2 pb-1">
+<div class="w-36 h-[5px] bg-white/40 rounded-full"></div>
+</div>
+</div>
+</main>
+</body></html>

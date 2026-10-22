@@ -1,0 +1,6 @@
+{
+  "name": "Beatify",
+  "description": "Apple Music-inspired OLED dark Android music, podcast, radio, Live TV, and YouTube Music application powered by AndroidX Media3 ExoPlayer, MediaSessionService, and Firebase sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

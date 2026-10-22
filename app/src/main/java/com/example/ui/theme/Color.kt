@@ -1,0 +1,51 @@
+package com.example.ui.theme
+
+import androidx.compose.ui.graphics.Color
+
+// Beatify Apple Music-Inspired OLED Dark Design System (Section 1)
+val OledBlack = Color(0xFF000000)
+val SurfaceLowest = Color(0xFF0A0A0C)
+val SurfaceDim = Color(0xFF131315)
+val SecondaryGroupedBg = Color(0xFF121214)
+val SurfaceLow = Color(0xFF18181B)
+val MainSurface = Color(0xFF1C1C1E)
+val ElevatedContainer = Color(0xFF1C1C1E)
+val ElevatedSurface = Color(0xFF27272A)
+val SurfaceContainer = Color(0xFF1F1F22)
+val SecondarySurface = Color(0xFF27272A)
+val SurfaceContainerHigh = Color(0xFF27272A)
+val InteractiveQuaternary = Color(0xFF2C2C2E)
+val SurfaceContainerHighest = Color(0xFF323236)
+val SurfaceBright = Color(0xFF39393B)
+val SeparatorQuinary = Color(0xFF3A3A3C)
+
+// Apple Music Primary Crimson Accent (#FA2D48), Secondary (#0A84FF), Highlight (#7C5CFF)
+val BeatifyAppleCrimson = Color(0xFFFA2D48)
+val NeonPink = Color(0xFFFA2D48)
+val HighlightFavoritePink = Color(0xFFFA2D48)
+val SystemBlue = Color(0xFF0A84FF)
+val PrimaryContainerBlue = Color(0xFF0A84FF)
+val PrimaryFixedDim = Color(0xFF8CC4FF)
+val SecondaryViolet = Color(0xFF7C5CFF)
+val AiAccentPurple = Color(0xFF7C5CFF)
+val AiAccentSoft = Color(0xFFCABDFF)
+val SecondaryContainerCrimson = Color(0xFFD60133)
+val SecondarySoftPink = Color(0xFFFFB3B2)
+val SystemGreen = Color(0xFF30D158)
+val TertiaryGreen = Color(0xFF47E266)
+val SystemOrange = Color(0xFFFF9F0A)
+val SystemIndigo = Color(0xFF5E5CE6)
+val ErrorSoft = Color(0xFFFFB4AB)
+
+// Text & Subtle Translucent Borders (8–12% opacity)
+val LabelPrimary = Color(0xFFFFFFFF)
+val OnSurfaceText = Color(0xFFFFFFFF)
+val SecondaryTextZinc = Color(0xFFA1A1AA)
+val OnSurfaceVariantText = Color(0xFFA1A1AA)
+val OutlineText = Color(0xFFA1A1AA)
+val OutlineVariantBorder = Color(0x1FFFFFFF) // 12% white border
+val SubtleBorderWhite = Color(0x14FFFFFF)    // 8% white border
+val LabelSecondary = Color(0xFFA1A1AA)
+val LabelTertiary = Color(0x66A1A1AA)
+val SpecularBorderLight = Color(0x1FFFFFFF)  // 12% white border
+val SpecularRimTop = Color(0x24FFFFFF)

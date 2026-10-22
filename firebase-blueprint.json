@@ -1,0 +1,105 @@
+{
+  "entities": {
+    "CloudPlaylist": {
+      "title": "CloudPlaylist",
+      "description": "Synchronized user playlist stored in Cloud Firestore.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner Firebase Auth UID." },
+        "name": { "type": "string", "description": "Playlist display title (1..120 chars)." },
+        "description": { "type": "string", "description": "Playlist description (0..500 chars)." },
+        "trackIdsCsv": { "type": "string", "description": "Comma-separated track IDs (0..4000 chars)." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server creation timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server update timestamp." }
+      },
+      "required": ["userId", "name", "description", "trackIdsCsv", "createdAt", "updatedAt"]
+    },
+    "CloudFavorite": {
+      "title": "CloudFavorite",
+      "description": "Synchronized favorite item (track, podcast, radio station, Live TV channel, or YouTube Music item).",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner Firebase Auth UID." },
+        "itemId": { "type": "string", "description": "Target media item identifier." },
+        "title": { "type": "string", "description": "Media title." },
+        "subtitle": { "type": "string", "description": "Artist, host, or network subtitle." },
+        "itemType": {
+          "type": "string",
+          "enum": ["track", "podcast", "radio", "livetv", "ytmusic"],
+          "description": "Media category."
+        },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server creation timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server update timestamp." }
+      },
+      "required": ["userId", "itemId", "title", "subtitle", "itemType", "createdAt", "updatedAt"]
+    },
+    "CloudSubscription": {
+      "title": "CloudSubscription",
+      "description": "Synchronized podcast show or radio station subscription.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner Firebase Auth UID." },
+        "showId": { "type": "string", "description": "Podcast show ID." },
+        "title": { "type": "string", "description": "Podcast show title." },
+        "publisher": { "type": "string", "description": "Podcast publisher or author." },
+        "feedUrl": { "type": "string", "description": "Validated RSS/Atom feed URL." },
+        "artworkUrl": { "type": "string", "description": "Cover artwork URL." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server creation timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server update timestamp." }
+      },
+      "required": ["userId", "showId", "title", "publisher", "feedUrl", "artworkUrl", "createdAt", "updatedAt"]
+    },
+    "CloudPreference": {
+      "title": "CloudPreference",
+      "description": "Synchronized user playback and privacy preference entry.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner Firebase Auth UID." },
+        "audioQuality": { "type": "string", "description": "Selected audio quality preset." },
+        "gaplessPlayback": { "type": "boolean", "description": "Whether gapless playback is enabled." },
+        "otaChannel": { "type": "string", "description": "Selected OTA release channel." },
+        "analyticsConsent": { "type": "boolean", "description": "Whether privacy-preserving diagnostics are enabled." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server creation timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server update timestamp." }
+      },
+      "required": ["userId", "audioQuality", "gaplessPlayback", "otaChannel", "analyticsConsent", "createdAt", "updatedAt"]
+    },
+    "CloudPlaybackProgress": {
+      "title": "CloudPlaybackProgress",
+      "description": "Synchronized playback resume point for tracks and podcast episodes.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner Firebase Auth UID." },
+        "mediaId": { "type": "string", "description": "Track or podcast episode ID." },
+        "mediaType": { "type": "string", "enum": ["track", "episode"], "description": "Media item type." },
+        "positionMs": { "type": "integer", "description": "Playback position in milliseconds." },
+        "durationMs": { "type": "integer", "description": "Total duration in milliseconds." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server creation timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server update timestamp." }
+      },
+      "required": ["userId", "mediaId", "mediaType", "positionMs", "durationMs", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/playlists/{playlistId}": {
+      "schema": { "$ref": "#/entities/CloudPlaylist" },
+      "description": "Per-user synchronized playlists."
+    },
+    "/users/{userId}/favorites/{favoriteId}": {
+      "schema": { "$ref": "#/entities/CloudFavorite" },
+      "description": "Per-user synchronized favorites across tracks, podcasts, radio, Live TV, and YouTube Music."
+    },
+    "/users/{userId}/subscriptions/{subscriptionId}": {
+      "schema": { "$ref": "#/entities/CloudSubscription" },
+      "description": "Per-user synchronized podcast subscriptions."
+    },
+    "/users/{userId}/preferences/{prefId}": {
+      "schema": { "$ref": "#/entities/CloudPreference" },
+      "description": "Per-user synchronized playback and OTA channel preferences."
+    },
+    "/users/{userId}/playbackProgress/{progressId}": {
+      "schema": { "$ref": "#/entities/CloudPlaybackProgress" },
+      "description": "Per-user synchronized track and podcast episode resume progress."
+    }
+  }
+}

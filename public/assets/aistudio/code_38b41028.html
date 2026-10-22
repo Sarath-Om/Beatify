@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Safari Tab Switcher - iOS 18</title>
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Plus Jakarta Sans (Theme typography) -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "secondary-fixed": "#ffdad9",
+            "on-primary-container": "#002957",
+            "on-error": "#690005",
+            "background": "#131315",
+            "inverse-on-surface": "#303032",
+            "on-secondary": "#680013",
+            "surface-variant": "#353437",
+            "inverse-primary": "#005db8",
+            "surface": "#131315",
+            "surface-container-high": "#2a2a2c",
+            "primary-container": "#3e90ff",
+            "primary-fixed-dim": "#aac7ff",
+            "on-surface": "#e4e2e4",
+            "tertiary-fixed-dim": "#47e266",
+            "on-background": "#e4e2e4",
+            "on-error-container": "#ffdad6",
+            "surface-container-highest": "#353437",
+            "on-primary-fixed-variant": "#00468d",
+            "on-surface-variant": "#c0c6d6",
+            "on-tertiary-container": "#00320d",
+            "primary-fixed": "#d6e3ff",
+            "surface-container-low": "#1b1b1d",
+            "secondary": "#ffb3b2",
+            "outline": "#8b91a0",
+            "error": "#ffb4ab",
+            "outline-variant": "#414754",
+            "primary": "#aac7ff",
+            "secondary-fixed-dim": "#ffb3b2",
+            "on-secondary-container": "#ffe7e6",
+            "on-secondary-fixed-variant": "#92001f",
+            "surface-container": "#1f1f21",
+            "on-primary-fixed": "#001b3e",
+            "surface-container-lowest": "#0e0e10",
+            "on-tertiary-fixed": "#002106",
+            "on-primary": "#003064",
+            "tertiary": "#47e266",
+            "tertiary-fixed": "#6cff82",
+            "inverse-surface": "#e4e2e4",
+            "surface-bright": "#39393b",
+            "surface-dim": "#131315",
+            "tertiary-container": "#00a73e",
+            "on-tertiary-fixed-variant": "#00531a",
+            "secondary-container": "#d60133",
+            "error-container": "#93000a",
+            "on-tertiary": "#003910",
+            "surface-tint": "#aac7ff",
+            "on-secondary-fixed": "#410008"
+          },
+          "borderRadius": {
+            "DEFAULT": "1rem",
+            "lg": "2rem",
+            "xl": "3rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xs": "0.25rem",
+            "space-lg": "1.25rem",
+            "margin": "1rem",
+            "gutter": "1rem",
+            "space-md": "1rem",
+            "space-sm": "0.5rem",
+            "space-xl": "2rem"
+          },
+          "fontFamily": {
+            "headline": ["Plus Jakarta Sans"],
+            "caption-1": ["Plus Jakarta Sans"],
+            "display-mobile": ["Plus Jakarta Sans"],
+            "title-3": ["Plus Jakarta Sans"],
+            "title-1": ["Plus Jakarta Sans"],
+            "subheadline": ["Plus Jakarta Sans"],
+            "callout": ["Plus Jakarta Sans"],
+            "footnote": ["Plus Jakarta Sans"],
+            "display": ["Plus Jakarta Sans"],
+            "caption-2": ["Plus Jakarta Sans"],
+            "body": ["Plus Jakarta Sans"],
+            "title-2": ["Plus Jakarta Sans"]
+          },
+          "fontSize": {
+            "headline": ["17px", {"lineHeight": "22px", "fontWeight": "600"}],
+            "caption-1": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+            "display-mobile": ["30px", {"lineHeight": "36px", "fontWeight": "700"}],
+            "title-3": ["20px", {"lineHeight": "25px", "fontWeight": "600"}],
+            "title-1": ["28px", {"lineHeight": "34px", "fontWeight": "700"}],
+            "subheadline": ["15px", {"lineHeight": "20px", "fontWeight": "400"}],
+            "callout": ["16px", {"lineHeight": "21px", "fontWeight": "400"}],
+            "footnote": ["13px", {"lineHeight": "18px", "fontWeight": "400"}],
+            "display": ["34px", {"lineHeight": "41px", "fontWeight": "700"}],
+            "caption-2": ["11px", {"lineHeight": "13px", "fontWeight": "600"}],
+            "body": ["17px", {"lineHeight": "22px", "fontWeight": "400"}],
+            "title-2": ["22px", {"lineHeight": "28px", "fontWeight": "600"}]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    body {
+      background-color: #000000;
+      color: #e4e2e4;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    
+    .glass-material {
+      background: rgba(28, 28, 30, 0.75);
+      backdrop-filter: blur(35px) saturate(190%);
+      -webkit-backdrop-filter: blur(35px) saturate(190%);
+      box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.12), inset 0 -1px 0 0 rgba(0, 0, 0, 0.40);
+    }
+
+    .glass-tab-header {
+      background: rgba(36, 36, 38, 0.90);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 0.5px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .island-glow {
+      box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.14);
+    }
+
+    .active-card-ring {
+      box-shadow: 0 0 0 2px #3e90ff, 0 8px 24px -4px rgba(62, 144, 255, 0.35);
+    }
+
+    .hide-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .hide-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-black text-on-surface antialiased select-none min-h-screen flex justify-center items-center p-0 md:py-6">
+<!-- Mobile Simulator Frame (iPhone 16 Pro aesthetic) -->
+<div class="relative w-full max-w-[420px] h-[884px] md:h-[880px] bg-black overflow-hidden flex flex-col md:rounded-[52px] shadow-[0_25px_70px_rgba(0,0,0,0.9)] border-0 md:border-[10px] md:border-[#222224]">
+<!-- Top Hardware Inset / iOS Status Bar (Shared Component TopAppBar alignment) -->
+<header class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-6 h-12 bg-transparent pointer-events-auto">
+<!-- Status Clock -->
+<span class="font-subheadline text-subheadline font-semibold text-on-surface tracking-tight w-12">9:41</span>
+<!-- Dynamic Island with subtle active hardware indicator -->
+<div class="relative w-[124px] h-[33px] bg-black rounded-full flex items-center justify-between px-3 island-glow cursor-pointer transition-transform duration-200 active:scale-95">
+<div class="w-3 h-3 rounded-full bg-[#101012] flex items-center justify-center">
+<div class="w-2 h-2 rounded-full bg-[#050508]"></div>
+</div>
+<!-- Active mic/cam indicator subtle amber/green dot -->
+<div class="flex items-center space-x-1">
+<div class="w-1.5 h-1.5 rounded-full bg-[#ff9f0a] animate-pulse"></div>
+<div class="w-2 h-2 rounded-full bg-[#18181b]"></div>
+</div>
+</div>
+<!-- System Status Indicators: Cellular, Wi-Fi, Battery -->
+<div class="flex items-center justify-end space-x-2 text-on-surface w-16">
+<span class="material-symbols-outlined text-[17px] leading-none" data-icon="signal_cellular_alt">signal_cellular_alt</span>
+<span class="material-symbols-outlined text-[17px] leading-none" data-icon="wifi">wifi</span>
+<div class="flex items-center space-x-0.5">
+<div class="w-[21px] h-[11px] border border-on-surface/80 rounded-[3px] p-[1.5px] flex items-center">
+<div class="w-full h-full bg-tertiary rounded-[1px]"></div>
+</div>
+<div class="w-[1.5px] h-[4px] bg-on-surface/80 rounded-r-full"></div>
+</div>
+</div>
+</header>
+<!-- Safari Tab Switcher Top Navigation Header -->
+<div class="pt-13 px-4 pb-3 flex items-center justify-between gap-3 bg-gradient-to-b from-black via-black/90 to-transparent z-40">
+<!-- New Tab Top-Left Button -->
+<button class="w-9 h-9 rounded-full bg-surface-container-high/70 flex items-center justify-center text-primary hover:bg-surface-container-highest transition-all duration-150 active:scale-95 border border-white/5">
+<span class="material-symbols-outlined text-[20px]" data-icon="add">add</span>
+</button>
+<!-- Center Search Tabs Pill Input -->
+<div class="flex-1 h-9 px-3 rounded-full bg-surface-container-high/60 backdrop-blur-md flex items-center space-x-2 border border-white/5 shadow-inner">
+<span class="material-symbols-outlined text-outline text-[18px]" data-icon="search">search</span>
+<input class="bg-transparent border-0 text-on-surface placeholder:text-outline text-footnote font-footnote focus:ring-0 w-full p-0 leading-tight" placeholder="Search Tabs" readonly="" type="text"/>
+<span class="material-symbols-outlined text-outline text-[16px]" data-icon="mic">mic</span>
+</div>
+<!-- Top-Right 'Done' Action Button -->
+<button class="text-headline font-headline text-primary-container hover:text-primary font-semibold px-2 py-1 transition-all duration-150 active:scale-95">
+        Done
+      </button>
+</div>
+<!-- Safari Grid Content Container -->
+<main class="flex-1 overflow-y-auto px-4 pb-28 pt-1 hide-scrollbar">
+<!-- Tab Category / Quick Stat Header -->
+<div class="flex items-center justify-between mb-3 px-1">
+<span class="text-caption-1 font-caption-1 font-semibold uppercase tracking-wider text-outline">Open Tabs</span>
+<button class="flex items-center space-x-1 text-primary-container text-caption-1 font-caption-1 font-medium hover:opacity-80 transition-opacity">
+<span class="material-symbols-outlined text-[14px]" data-icon="sort">sort</span>
+<span>By Title</span>
+</button>
+</div>
+<!-- 2-Column Responsive Safari Tab Grid -->
+<div class="grid grid-cols-2 gap-3 pb-6">
+<!-- TAB CARD 1: ACTIVE (The Verge / Ambient Intelligence) -->
+<article class="relative flex flex-col rounded-2xl overflow-hidden active-card-ring bg-surface-container-low transition-all duration-200 group cursor-pointer active:scale-[0.98]">
+<!-- Card Header Bar -->
+<div class="glass-tab-header h-9 px-2.5 flex items-center justify-between z-10">
+<div class="flex items-center space-x-1.5 min-w-0 pr-1">
+<!-- Site Favicon -->
+<div class="w-4 h-4 rounded bg-[#e11242] flex items-center justify-center shrink-0">
+<span class="text-[9px] font-bold text-white tracking-tighter">V</span>
+</div>
+<!-- Title -->
+<span class="text-caption-2 font-caption-2 text-on-surface font-medium truncate">
+                Ambient Intelligence - The Verge
+              </span>
+</div>
+<!-- Dismiss Button -->
+<button class="w-5 h-5 rounded-full bg-surface-variant flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-bright transition-colors shrink-0">
+<span class="material-symbols-outlined text-[13px]" data-icon="close">close</span>
+</button>
+</div>
+<!-- Webpage Snapshot Preview -->
+<div class="relative w-full h-[184px] overflow-hidden bg-surface-container-lowest">
+<div class="w-full h-full bg-cover bg-top transition-transform duration-300 group-hover:scale-105" data-alt="A sophisticated dark mode technology editorial page featuring high-contrast layout, sleek neon red accent lines, detailed architectural diagrams of futuristic ambient computing chips, sharp typography headlines, and a serene ambient dark aesthetic typical of luxury tech journalism." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuANTciH89bUG84bbHuSLStkcD4vOFinrHdmKCdpCQrN2R6fz_ZQVjunEqDY_Zl--q85HOO42yG2t1aQ7IeqgU_3MSxm5szEyGbxeZLzYkzvkkJBTfZCfcSoK_bDDvSFf-hhQJ6dOhPOxq7cBpOQ65lR9JngIytYUkFGUqAHSk9_Dq0vgS3gxdpei68CQOg0wjnVxOtxDdj7GcGEgSpTyR3bJTkDGC63stfM5uVrd-RTr1OWMIK5LAM6Ug')">
+<!-- Mini simulated article overlay for hyper-realism -->
+<div class="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/80 flex flex-col justify-end p-2.5">
+<div class="h-1 w-8 bg-[#e11242] rounded-full mb-1"></div>
+<div class="text-[10px] font-semibold text-white/90 leading-tight">The invisible shift towards zero-UI experiences in modern spatial hardware.</div>
+</div>
+</div>
+</div>
+</article>
+<!-- TAB CARD 2: Apple Music Web Player -->
+<article class="relative flex flex-col rounded-2xl overflow-hidden border border-[#2C2C2E] bg-surface-container-low transition-all duration-200 group cursor-pointer active:scale-[0.98]">
+<!-- Card Header Bar -->
+<div class="glass-tab-header h-9 px-2.5 flex items-center justify-between z-10">
+<div class="flex items-center space-x-1.5 min-w-0 pr-1">
+<div class="w-4 h-4 rounded-full bg-[#FA2D48] flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[10px] text-white" data-icon="music_note">music_note</span>
+</div>
+<span class="text-caption-2 font-caption-2 text-on-surface font-medium truncate">
+                Apple Music - Spatial Audio
+              </span>
+</div>
+<button class="w-5 h-5 rounded-full bg-surface-variant flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-bright transition-colors shrink-0">
+<span class="material-symbols-outlined text-[13px]" data-icon="close">close</span>
+</button>
+</div>
+<!-- Snapshot Preview -->
+<div class="relative w-full h-[184px] overflow-hidden bg-[#110e13]">
+<div class="w-full h-full bg-cover bg-center transition-transform duration-300 group-hover:scale-105" data-alt="An authentic Apple Music interface rendering dynamic blurred album art in luminous neon pink and magenta shades with glowing specular highlights, featuring minimalist playback controls, high-res vinyl artwork rendering, and sleek dark mode glass surfaces against deep OLED blacks." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuA_r2yJJhphUZLzLhhk7tw2CPEdz_R0xdyThe2mPxyP6voIY5QegtjuiRLFskfC4nPCq4855Q9lyFr-O0of4jxQEITDsbUPLq9GibzKL7MM8DkRT3k9-skmvQCU9b7Eyb4-9WyFvUhMGgY-iurzKp1ekdJAsteoqrmRWb2yFL9iiuU_RILaJqwojstvX3LqbMgrHTB-vhkbkLk5M1aynU7lg-5sco5ziHA3o9bOdPM8BU7pe2r5igcu1Q')">
+<div class="absolute inset-0 bg-black/30 backdrop-blur-[1px] flex flex-col justify-end p-2.5">
+<div class="flex items-center space-x-1.5 bg-black/60 rounded-full py-0.5 px-2 w-fit backdrop-blur-md">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary-container animate-ping"></span>
+<span class="text-[9px] font-medium text-white">Lossless</span>
+</div>
+</div>
+</div>
+</div>
+</article>
+<!-- TAB CARD 3: GitHub - Design Systems -->
+<article class="relative flex flex-col rounded-2xl overflow-hidden border border-[#2C2C2E] bg-surface-container-low transition-all duration-200 group cursor-pointer active:scale-[0.98]">
+<div class="glass-tab-header h-9 px-2.5 flex items-center justify-between z-10">
+<div class="flex items-center space-x-1.5 min-w-0 pr-1">
+<div class="w-4 h-4 rounded bg-white flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[11px] text-black" data-icon="code">code</span>
+</div>
+<span class="text-caption-2 font-caption-2 text-on-surface font-medium truncate">
+                GitHub: apple/swift-ui-core
+              </span>
+</div>
+<button class="w-5 h-5 rounded-full bg-surface-variant flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-bright transition-colors shrink-0">
+<span class="material-symbols-outlined text-[13px]" data-icon="close">close</span>
+</button>
+</div>
+<!-- Snapshot Preview -->
+<div class="relative w-full h-[184px] overflow-hidden bg-[#0d1117]">
+<div class="w-full h-full bg-cover bg-top transition-transform duration-300 group-hover:scale-105" data-alt="A clean, crisp GitHub dark-mode software repository view showing code diffs in monospace typography, syntax highlighting in neon green and electric cyan, Git branching graphs, and a contemporary open-source developer dashboard aesthetic with deep slate borders." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuB59f2P7gQzHvqOqdfThFINhqYrCl7OdiMobDBCNEV0pHyUHyzFfjheHEWDsOoaICYLL9j79wNhUfndWKky7TqrEhlcxWXSUofDErQND_J4DdDEdlRxMwNz7F_4CRizPT3k6c3M2XsBl70y_7umOOYL6rnx6Je4tfaGQ1tdO9847APK1rlybU5hwnZLBAkXuK3MLKjxGQ_8JjS6Am6OLISHI6OB7wjV_yRQfbVkq2hH50RhVoxmEr9U_w')">
+<div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-end p-2">
+<span class="text-[9px] font-mono text-tertiary-fixed font-medium">v4.2.0 • 1,420 commits</span>
+</div>
+</div>
+</div>
+</article>
+<!-- TAB CARD 4: Figma Collaborative Design -->
+<article class="relative flex flex-col rounded-2xl overflow-hidden border border-[#2C2C2E] bg-surface-container-low transition-all duration-200 group cursor-pointer active:scale-[0.98]">
+<div class="glass-tab-header h-9 px-2.5 flex items-center justify-between z-10">
+<div class="flex items-center space-x-1.5 min-w-0 pr-1">
+<div class="w-4 h-4 rounded bg-[#0acf83] flex items-center justify-center shrink-0">
+<span class="text-[9px] font-black text-black">F</span>
+</div>
+<span class="text-caption-2 font-caption-2 text-on-surface font-medium truncate">
+                Figma - iOS 18 Design Kit
+              </span>
+</div>
+<button class="w-5 h-5 rounded-full bg-surface-variant flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-bright transition-colors shrink-0">
+<span class="material-symbols-outlined text-[13px]" data-icon="close">close</span>
+</button>
+</div>
+<div class="relative w-full h-[184px] overflow-hidden bg-[#1e1e1e]">
+<div class="w-full h-full bg-cover bg-center transition-transform duration-300 group-hover:scale-105" data-alt="A high-fidelity Figma canvas editor showing a multi-screen mobile UI prototype layout with colorful user presence cursors, vector component variants, layers sidebar panels, and an ultra-modern collaborative design tool interface bathed in soft workspace ambient illumination." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCJV8OTPfeCAs5n67wLwIdcxsX6AUUa2mFezWHqqeAUrBeSW5YfFvWHcBjrRBqqaQAa980s2wCu5W5oy_OqKN8ObnBYHNgPw5c2Ngzj5AS88zse7XyovIuFOuLPa40klrSYcpPwBTN9t-IoGf2IrtgFh2ivDIzW40hQ6b1D_vYbhVJzdYLSagwyOTfVbldqRVI7aagZzSxCQvU2X_yFrK6XU_USI9iiQ-i_k_BkDQMHcu1A0c3WaXAChw')">
+<div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent flex flex-col justify-end p-2">
+<div class="flex items-center space-x-1">
+<span class="w-2 h-2 rounded-full bg-primary-container"></span>
+<span class="text-[9px] text-white/80 font-medium">Auto-Layout 5.0</span>
+</div>
+</div>
+</div>
+</div>
+</article>
+<!-- TAB CARD 5: Linear Task Flow -->
+<article class="relative flex flex-col rounded-2xl overflow-hidden border border-[#2C2C2E] bg-surface-container-low transition-all duration-200 group cursor-pointer active:scale-[0.98]">
+<div class="glass-tab-header h-9 px-2.5 flex items-center justify-between z-10">
+<div class="flex items-center space-x-1.5 min-w-0 pr-1">
+<div class="w-4 h-4 rounded bg-[#5e6ad2] flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[10px] text-white" data-icon="check_circle">check_circle</span>
+</div>
+<span class="text-caption-2 font-caption-2 text-on-surface font-medium truncate">
+                Linear - Sprint Cycles Q4
+              </span>
+</div>
+<button class="w-5 h-5 rounded-full bg-surface-variant flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-bright transition-colors shrink-0">
+<span class="material-symbols-outlined text-[13px]" data-icon="close">close</span>
+</button>
+</div>
+<div class="relative w-full h-[184px] overflow-hidden bg-[#0c0d0e]">
+<div class="w-full h-full bg-cover bg-top transition-transform duration-300 group-hover:scale-105" data-alt="A minimalist Linear project management sprint board in pure dark mode, presenting sleek keyboard-first UI cards, glowing completion percentage circular dials, status indicators, and clean typography bathed in ambient violet and electric indigo accent glows." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCUuwcXePFoUMmh_OHTiQXOf7iZX84F9YRQiX2vmQUsgPvvqvVjBiIhogsDNtiF1wNzAFgft1MwgBA2X5JnFCtkU_Mp-O1JKeOcRCcRVWlR9eblHJbX202fCIn65bmbcKmghsh0oTeWCco80tZVcoN0wFGTJXK-tWqDpY5MtN8-fHJCjCEJL9lNUkNVW2CkREcknUh8TpFz1og9JQUq6orMmoGDiH5CC4wl_D8GMAi7fCc0EncACtzvVg')">
+<div class="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex flex-col justify-end p-2">
+<span class="text-[9px] text-outline font-medium">92% completed • Cycle 48</span>
+</div>
+</div>
+</div>
+</article>
+<!-- TAB CARD 6: Architectural Digest -->
+<article class="relative flex flex-col rounded-2xl overflow-hidden border border-[#2C2C2E] bg-surface-container-low transition-all duration-200 group cursor-pointer active:scale-[0.98]">
+<div class="glass-tab-header h-9 px-2.5 flex items-center justify-between z-10">
+<div class="flex items-center space-x-1.5 min-w-0 pr-1">
+<div class="w-4 h-4 rounded bg-[#9a784d] flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[10px] text-white" data-icon="villa">villa</span>
+</div>
+<span class="text-caption-2 font-caption-2 text-on-surface font-medium truncate">
+                Minimalism in Kyoto - AD
+              </span>
+</div>
+<button class="w-5 h-5 rounded-full bg-surface-variant flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-bright transition-colors shrink-0">
+<span class="material-symbols-outlined text-[13px]" data-icon="close">close</span>
+</button>
+</div>
+<div class="relative w-full h-[184px] overflow-hidden bg-[#151412]">
+<div class="w-full h-full bg-cover bg-center transition-transform duration-300 group-hover:scale-105" data-alt="A tranquil, high-end architectural photograph of a modern minimalist wooden villa in Kyoto at twilight, warm ambient indoor illumination shining through slatted cedar screens into an impeccably designed rock garden with deep natural shadows and quiet elegance." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDZbc3X_BMUbeMJlLQQImBeutN30mAVFSCWV2QdtmUjEBMKQJf3aEeRADfgUasY9hyKwtXMzDsWSnsbtWKQwqKAIJQyvK6BK7RB0RoofopfFXEjhSHUoIQDknOV4mlYzOpgdX2GDo9SgvHUOZIKPnun0P2l_plchShvZRMw4E1FWkkgmJ_sSwVdT1CKRbv9T3nEP0kTsmcJzq0Krl6_lydQgPIM7qdc3Srzag_58FNPeuWd2-kgA2gUpg')">
+<div class="absolute inset-0 bg-gradient-to-t from-black/75 to-transparent flex flex-col justify-end p-2">
+<span class="text-[9px] text-white/90 font-medium">Zen &amp; Modern Spatial Purity</span>
+</div>
+</div>
+</div>
+</article>
+</div>
+<!-- Cloud Tabs / Connected Devices Inset Group -->
+<section class="mt-2 mb-6 rounded-2xl bg-surface-container-low border border-white/5 p-3.5 flex items-center justify-between">
+<div class="flex items-center space-x-3">
+<div class="w-8 h-8 rounded-full bg-surface-container-high flex items-center justify-center text-primary-container">
+<span class="material-symbols-outlined text-[18px]" data-icon="laptop_mac">laptop_mac</span>
+</div>
+<div>
+<div class="text-footnote font-footnote font-semibold text-on-surface">MacBook Pro Tabs</div>
+<div class="text-caption-2 font-caption-2 text-outline">3 tabs synced via iCloud</div>
+</div>
+</div>
+<span class="material-symbols-outlined text-outline text-[18px]" data-icon="arrow_forward_ios">arrow_forward_ios</span>
+</section>
+</main>
+<!-- Shared Component: BottomNavBar / Safari Tab Group Floating Toolbar -->
+<!-- Applying exact JSON execution: bg-surface-container-high/80 backdrop-blur-2xl, shadow-2xl, flex justify-around -->
+<div class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 docked full-width bottom-0 pb-8 pt-2 bg-surface-container-high/80 backdrop-blur-2xl shadow-2xl transition-all">
+<!-- Bottom Left: Private Browsing Mode Toggle -->
+<button class="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-surface-container/60 hover:bg-surface-bright border border-white/5 transition-all duration-150 active:scale-90 text-on-surface">
+<span class="material-symbols-outlined text-[17px] text-outline" data-icon="visibility_off">visibility_off</span>
+<span class="text-caption-1 font-caption-1 font-medium">Private</span>
+</button>
+<!-- Center: Tab Group Picker / Counter Indicator with Dropdown -->
+<button class="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-full bg-surface-container-highest/80 hover:bg-surface-bright border border-white/10 shadow-sm transition-all duration-150 active:scale-95">
+<span class="text-footnote font-footnote font-semibold text-on-surface">6 Tabs</span>
+<span class="material-symbols-outlined text-[16px] text-outline" data-icon="keyboard_arrow_down">keyboard_arrow_down</span>
+</button>
+<!-- Bottom Right: New Tab Primary Action Pill -->
+<button class="w-9 h-9 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container hover:opacity-90 shadow-lg shadow-primary-container/20 transition-all duration-150 active:scale-90">
+<span class="material-symbols-outlined text-[20px] font-bold" data-icon="add">add</span>
+</button>
+<!-- Home Indicator Bar (Fixed anchored within bottom safe area) -->
+<div class="absolute bottom-2 left-1/2 -translate-x-1/2 w-36 h-1 bg-white/35 rounded-full pointer-events-none"></div>
+</div>
+</div>
+</body></html>

@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
+<title>The Verge - Safari</title>
+<!-- Google Fonts: Plus Jakarta Sans -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS v3 -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Configuration verbatim as mandated -->
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "inverse-on-surface": "#303032",
+            "secondary-container": "#d60133",
+            "error": "#ffb4ab",
+            "on-secondary": "#680013",
+            "surface-variant": "#353437",
+            "primary-fixed-dim": "#aac7ff",
+            "on-surface": "#e4e2e4",
+            "on-tertiary-fixed-variant": "#00531a",
+            "on-primary-fixed-variant": "#00468d",
+            "on-tertiary": "#003910",
+            "tertiary-container": "#00a73e",
+            "tertiary-fixed": "#6cff82",
+            "surface-dim": "#131315",
+            "primary-container": "#3e90ff",
+            "on-secondary-fixed-variant": "#92001f",
+            "background": "#131315",
+            "on-secondary-fixed": "#410008",
+            "primary": "#aac7ff",
+            "on-background": "#e4e2e4",
+            "inverse-primary": "#005db8",
+            "surface-container-lowest": "#0e0e10",
+            "surface-tint": "#aac7ff",
+            "on-error": "#690005",
+            "on-tertiary-container": "#00320d",
+            "outline": "#8b91a0",
+            "surface-container": "#1f1f21",
+            "tertiary-fixed-dim": "#47e266",
+            "surface-bright": "#39393b",
+            "on-surface-variant": "#c0c6d6",
+            "surface-container-high": "#2a2a2c",
+            "surface-container-low": "#1b1b1d",
+            "secondary-fixed": "#ffdad9",
+            "secondary-fixed-dim": "#ffb3b2",
+            "primary-fixed": "#d6e3ff",
+            "error-container": "#93000a",
+            "on-secondary-container": "#ffe7e6",
+            "on-primary-fixed": "#001b3e",
+            "on-error-container": "#ffdad6",
+            "surface-container-highest": "#353437",
+            "tertiary": "#47e266",
+            "outline-variant": "#414754",
+            "surface": "#131315",
+            "on-tertiary-fixed": "#002106",
+            "on-primary-container": "#002957",
+            "on-primary": "#003064",
+            "inverse-surface": "#e4e2e4",
+            "secondary": "#ffb3b2"
+          },
+          "borderRadius": {
+            "DEFAULT": "1rem",
+            "lg": "2rem",
+            "xl": "3rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xl": "2rem",
+            "space-md": "1rem",
+            "space-lg": "1.25rem",
+            "space-sm": "0.5rem",
+            "space-xs": "0.25rem",
+            "gutter": "1rem",
+            "margin": "1rem"
+          },
+          "fontFamily": {
+            "body": ["Plus Jakarta Sans"],
+            "title-2": ["Plus Jakarta Sans"],
+            "callout": ["Plus Jakarta Sans"],
+            "subheadline": ["Plus Jakarta Sans"],
+            "title-3": ["Plus Jakarta Sans"],
+            "caption-2": ["Plus Jakarta Sans"],
+            "caption-1": ["Plus Jakarta Sans"],
+            "display": ["Plus Jakarta Sans"],
+            "title-1": ["Plus Jakarta Sans"],
+            "footnote": ["Plus Jakarta Sans"],
+            "display-mobile": ["Plus Jakarta Sans"],
+            "headline": ["Plus Jakarta Sans"]
+          },
+          "fontSize": {
+            "body": ["17px", {"lineHeight": "22px", "fontWeight": "400"}],
+            "title-2": ["22px", {"lineHeight": "28px", "fontWeight": "600"}],
+            "callout": ["16px", {"lineHeight": "21px", "fontWeight": "400"}],
+            "subheadline": ["15px", {"lineHeight": "20px", "fontWeight": "400"}],
+            "title-3": ["20px", {"lineHeight": "25px", "fontWeight": "600"}],
+            "caption-2": ["11px", {"lineHeight": "13px", "fontWeight": "600"}],
+            "caption-1": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+            "display": ["34px", {"lineHeight": "41px", "fontWeight": "700"}],
+            "title-1": ["28px", {"lineHeight": "34px", "fontWeight": "700"}],
+            "footnote": ["13px", {"lineHeight": "18px", "fontWeight": "400"}],
+            "display-mobile": ["30px", {"lineHeight": "36px", "fontWeight": "700"}],
+            "headline": ["17px", {"lineHeight": "22px", "fontWeight": "600"}]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    /* iOS Custom Glass Specular Highlight and Dynamic Optical Depth */
+    .ios-glass-pill {
+      background: rgba(30, 30, 32, 0.78);
+      backdrop-filter: blur(35px) saturate(190%);
+      -webkit-backdrop-filter: blur(35px) saturate(190%);
+      box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.12),
+                  inset 0 -1px 0 0 rgba(0, 0, 0, 0.45),
+                  0 8px 32px rgba(0, 0, 0, 0.6);
+    }
+    .ios-toolbar-glass {
+      background: rgba(22, 22, 24, 0.88);
+      backdrop-filter: blur(40px) saturate(200%);
+      -webkit-backdrop-filter: blur(40px) saturate(200%);
+    }
+    .island-specular {
+      box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.14),
+                  0 4px 16px rgba(0, 0, 0, 0.9);
+    }
+    /* Hide scrollbars for native touch fidelity */
+    ::-webkit-scrollbar {
+      display: none;
+    }
+    * {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface-container-lowest text-on-surface antialiased selection:bg-primary-container selection:text-on-primary-container min-h-screen overflow-x-hidden relative flex flex-col justify-between">
+<!-- ========================================================================= -->
+<!-- TOP APP BAR (Shared Components JSON Compliant with Dynamic Island)         -->
+<!-- ========================================================================= -->
+<header class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-6 h-12 bg-transparent pointer-events-none">
+<!-- Status Bar Left: Clock Anchor -->
+<div class="pointer-events-auto flex items-center z-50">
+<span class="text-subheadline font-subheadline font-semibold text-on-surface tracking-tight">9:41</span>
+</div>
+<!-- Center: Dynamic Island Hardware Simulation -->
+<div class="pointer-events-auto absolute left-1/2 -translate-x-1/2 top-2.5 z-50 flex items-center justify-between px-3 h-[35px] w-[124px] bg-black rounded-full island-specular transition-all duration-300 hover:w-[210px] cursor-pointer group">
+<!-- Camera sensor circle -->
+<div class="w-3 h-3 rounded-full bg-[#08080a] border border-white/5 flex items-center justify-center">
+<div class="w-1.5 h-1.5 rounded-full bg-[#051124] opacity-80"></div>
+</div>
+<!-- Subtle Active Activity Indicator (Safari Audio / Lock Mini) -->
+<div class="flex items-center space-x-1.5 opacity-90 group-hover:scale-105 transition-transform">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary animate-pulse"></span>
+<span class="material-symbols-outlined text-[13px] text-on-surface-variant font-medium">lock</span>
+</div>
+<!-- Ambient sensor lens dot -->
+<div class="w-2.5 h-2.5 rounded-full bg-[#111115]"></div>
+</div>
+<!-- Status Bar Right: Signal, Wi-Fi, 100% Battery -->
+<div class="pointer-events-auto flex items-center space-x-2 text-on-surface z-50">
+<!-- Cellular Signal Bars from JSON -->
+<span class="material-symbols-outlined text-[16px] tracking-tighter" data-icon="signal_cellular_alt">signal_cellular_alt</span>
+<!-- iOS Wi-Fi Glyph -->
+<span class="material-symbols-outlined text-[17px]">wifi</span>
+<!-- 100% Battery Pill with Internal Charge Bar -->
+<div class="flex items-center">
+<div class="w-5 h-2.5 rounded-[4px] border border-on-surface/80 p-[1.5px] flex items-center">
+<div class="w-full h-full bg-tertiary rounded-[2px]"></div>
+</div>
+<div class="w-[1.5px] h-1 bg-on-surface/80 rounded-r-sm -ml-[0.5px]"></div>
+</div>
+</div>
+</header>
+<!-- ========================================================================= -->
+<!-- MAIN SCROLL CANVAS: Editorial Article Experience (Reader Mode)           -->
+<!-- ========================================================================= -->
+<main class="w-full max-w-xl mx-auto px-5 pt-16 pb-48 flex-grow">
+<!-- Reader View Top Banner (iOS Safari Quick Actions) -->
+<section class="mt-4 mb-6 flex items-center justify-between py-2 border-b border-surface-variant/40">
+<div class="flex items-center space-x-2">
+<span class="material-symbols-outlined text-outline text-[17px]">format_size</span>
+<span class="text-caption-1 font-caption-1 text-outline">Reader View Available</span>
+</div>
+<div class="flex items-center space-x-3">
+<button class="text-caption-1 font-caption-1 text-primary hover:opacity-80 transition-opacity" type="button">Show Original</button>
+</div>
+</section>
+<!-- Publication Masthead & Metadata -->
+<header class="space-y-4 mb-8">
+<div class="flex items-center justify-between">
+<div class="flex items-center space-x-2.5">
+<span class="px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container text-caption-2 font-caption-2 uppercase tracking-wider font-bold">
+            The Verge
+          </span>
+<span class="text-outline text-caption-1 font-caption-1 font-semibold">Tech Quarterly</span>
+</div>
+<div class="flex items-center space-x-1.5 text-outline text-caption-1 font-caption-1">
+<span class="material-symbols-outlined text-[15px]">schedule</span>
+<span>4 min read</span>
+</div>
+</div>
+<!-- Main Headline using typography tokens -->
+<h1 class="text-display-mobile md:text-display font-display tracking-tight text-on-surface leading-tight font-extrabold">
+        The Architecture of Ambient Intelligence
+      </h1>
+<!-- Deck / Subheading -->
+<p class="text-headline font-headline text-on-surface-variant font-normal leading-relaxed">
+        How transparent micro-interfaces, tactile spatial sensors, and generative local models are quietly reshaping personal computing from the inside out.
+      </p>
+<!-- Author Row -->
+<div class="flex items-center space-x-3 pt-2">
+<div class="w-9 h-9 rounded-full bg-surface-container-high border border-outline-variant/50 overflow-hidden flex items-center justify-center">
+<span class="text-caption-1 font-caption-1 font-bold text-primary">DP</span>
+</div>
+<div>
+<div class="text-subheadline font-subheadline font-semibold text-on-surface">Dieter Patel</div>
+<div class="text-caption-2 font-caption-2 text-outline">Senior Systems Editor • Updated October 28</div>
+</div>
+</div>
+</header>
+<!-- Featured Minimal Tech Imagery -->
+<figure class="my-8 rounded-lg overflow-hidden border border-outline-variant/30 bg-surface-container-low shadow-2xl">
+<img alt="Ambient Spatial Hardware" class="w-full h-64 object-cover object-center" data-alt="A hyper-minimalist black titanium spatial hardware device resting on a matte dark concrete pedestal. Volumetric diffused neon blue and subtle magenta light streaks skim over polished dark glass edges and micro-drilled acoustic ports. Atmospheric, sophisticated, dark mode aesthetic with deep OLED blacks, high-contrast reflections, and ultra-fine industrial design details." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD-kf0yVlfwx4rVKnOxGpcnffIRRb743ZG1o0ttMH2gctcwQpebU7izeC--t_tOz0fjrIajSLjdaOtqYAtNkZr0T77-VymC8o4TMy2dylInwvjBhJPY5qXwLKsY-PINSirbw8ZsyhxfeunHAm6IGB4pjQlx-MzgoK_CG9wVMEdIHgCwzaPbQYrO9SSLD0wZ5KE8TVqZXJ9Eh62DmzDABM8AWr7hPQxa2kkoJgRhA-wK3Cs35BdNYZh1Ew"/>
+<figcaption class="px-4 py-3 bg-surface-container/90 text-caption-1 font-caption-1 text-on-surface-variant flex justify-between items-center">
+<span>Figure 1: Monolithic silicon substrate with passive optical waveguides.</span>
+<span class="text-outline text-caption-2 font-caption-2">01 / 04</span>
+</figcaption>
+</figure>
+<!-- Editorial Body Paragraphs -->
+<article class="space-y-6 text-body font-body leading-relaxed text-on-surface-variant">
+<p class="first-letter:text-display first-letter:font-display first-letter:font-extrabold first-letter:mr-2 first-letter:float-left first-letter:text-primary">
+        Modern computing is undergoing a silent metamorphosis. For nearly two decades, mobile interaction has been governed by rigid rectangles of polarized glass: touch, drag, dismiss, repeat. Yet the next inflection point is neither another high-refresh display nor an ostentatious pair of wire-tethered goggles. It is ambient presence.
+      </p>
+<p>
+        By orchestrating localized, low-power neural silicon directly on-device, next-generation frameworks anticipate intent without constant transactional input. The screen recedes from being a hyperactive billboard to an ultra-refined, calm canvas that surfaces context solely when physics and intention converge.
+      </p>
+<!-- Glass Bento Highlight Card / Rich Pull Quote -->
+<blockquote class="my-8 p-6 rounded-lg bg-surface-container-high/60 backdrop-blur-md border border-outline-variant/40 relative overflow-hidden group">
+<div class="absolute -right-8 -bottom-8 w-32 h-32 bg-primary-container/10 rounded-full blur-2xl pointer-events-none"></div>
+<span class="material-symbols-outlined text-primary text-3xl mb-2 opacity-80" data-weight="fill">format_quote</span>
+<p class="text-title-3 font-title-3 text-on-surface font-semibold italic leading-snug">
+          "The most potent technology is not that which demands our gaze, but that which dissolves into our tactile peripheral awareness."
+        </p>
+<footer class="mt-4 flex items-center space-x-2 text-caption-1 font-caption-1 text-outline">
+<span class="w-4 h-[1px] bg-primary"></span>
+<span>Dr. Aris Thorne, Cambridge Ambient Lab</span>
+</footer>
+</blockquote>
+<p>
+        Consider how Apple approaches the dynamic status envelope in iOS 18. Hardware apertures are no longer static obstructions; they are kinetic entities that stretch, absorb, and reflect real-time micro-events. It represents a subtle shift from application-centric operating models toward dynamic stream states.
+      </p>
+<!-- Inline Secondary Tech Imagery (Split Bento Layout) -->
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 my-8">
+<div class="rounded-lg overflow-hidden border border-outline-variant/30 bg-surface-container-low">
+<img alt="Frosted glass ribbing detail" class="w-full h-44 object-cover" data-alt="Close up architectural detail of frosted optical glass and black anodized aluminum ribs under studio softbox lighting. Deep shadows, subtle neon teal refractive edges, ultra-clean industrial texture, macro depth of field in Dark Mode luxury style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCm_4hWWnrxVL34SdPIXnbIK6cFHf-q2daAOvloeRYaC8tR7rdhsbUgwX2Aa1yMxbmwnwspB0-_Uaf4OSMGQanjcI-ydMJ0XMO3Zz4l3cwBP4jZrdHzQ8TptTxauR2n5mchA1K5MmnkID2pUE3bUbHl35B1wx04LJpOEaqy62ICkETW3nevkaCEvXm9yGyMIbTaOGlqdaqz6QMv4PjYR6Ejwoq38_LtEDNkYJ3RfFZUc6uJg1IU_8-EBw"/>
+<div class="p-3 bg-surface-container">
+<span class="text-caption-1 font-caption-1 font-semibold text-on-surface block">Sub-surface Sensors</span>
+<span class="text-caption-2 font-caption-2 text-outline">Near-field infrared emitters</span>
+</div>
+</div>
+<div class="rounded-lg overflow-hidden border border-outline-variant/30 bg-surface-container-low">
+<img alt="Acoustic wave visualization" class="w-full h-44 object-cover" data-alt="An abstract visualization of continuous mathematical wave functions glowing in vibrant cyan and magenta across a jet-black void. Crisp vector-like curves, subtle dark grid lines, OLED black aesthetics and futuristic elegance." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDnbdBB3RFMJ7s4kCZFluAqinx8mmFOAwDb6-ag-Tx4vLYbNfuwhQg08OC_MlsbNb1tywcT51xONgoQBIC3ZKxTig7oNwalnXR7V1g1FNmEl2ifj_OrlcGc4JneeL7H3nBlWdTtSRL1p5a9kd_ZLTp1jpddl4JrXP1OUM0UyvgmgskczjcKhHa0m61uzOgNICteESIv_NINN2uR2dgtLcG378WGXcTAUsPUM1ws1X6ECq1iZVKTfOTJxg"/>
+<div class="p-3 bg-surface-container">
+<span class="text-caption-1 font-caption-1 font-semibold text-on-surface block">Dynamic Resonators</span>
+<span class="text-caption-2 font-caption-2 text-outline">Haptic feedback matrices</span>
+</div>
+</div>
+</div>
+<p>
+        As Safari demonstrates in its latest unified floating address bar, interaction anchors gravitate closer to the natural resting arc of the human thumb. In reducing physical travel across a 6.7-inch display, the operating system acknowledges ergonomics not as an afterthought, but as the governing foundation of interface fidelity.
+      </p>
+<div class="p-4 rounded-lg bg-surface-container border border-surface-variant/40 flex items-center justify-between">
+<div class="flex items-center space-x-3">
+<div class="w-10 h-10 rounded-full bg-surface-bright flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[20px]">bookmark</span>
+</div>
+<div>
+<div class="text-subheadline font-subheadline font-semibold text-on-surface">Save to Verge Reading List</div>
+<div class="text-caption-2 font-caption-2 text-outline">Synced across iCloud Devices</div>
+</div>
+</div>
+<button class="px-4 py-1.5 rounded-full bg-primary-container text-on-primary-container font-subheadline text-subheadline font-semibold active:scale-95 transition-transform">
+          Save
+        </button>
+</div>
+</article>
+</main>
+<!-- ========================================================================= -->
+<!-- BOTTOM FIXED REGION: Floating Address Bar & Safari Tool Bar              -->
+<!-- ========================================================================= -->
+<div class="fixed bottom-0 left-0 w-full z-40 flex flex-col items-center pointer-events-none">
+<!-- 1. Authentic iOS 18 Safari Floating Address Capsule -->
+<div class="w-full max-w-md px-4 mb-2 pointer-events-auto">
+<div class="ios-glass-pill h-[50px] rounded-full flex items-center justify-between px-4 transition-transform active:scale-[0.98] duration-150 cursor-pointer">
+<!-- Left: AA Text Options Button -->
+<button aria-label="Format Options" class="text-on-surface hover:text-primary transition-colors flex items-center justify-center w-8 h-8 rounded-full active:bg-white/10" type="button">
+<span class="font-bold text-[14px] tracking-tighter">AA</span>
+</button>
+<!-- Center: Lock & Domain Badge -->
+<div class="flex items-center space-x-1.5 overflow-hidden px-2">
+<span class="material-symbols-outlined text-outline text-[14px]">lock</span>
+<span class="text-subheadline font-subheadline font-medium text-on-surface tracking-tight truncate">theverge.com</span>
+</div>
+<!-- Right: Reload / Refresh Button -->
+<button aria-label="Reload Page" class="text-on-surface hover:text-primary transition-colors flex items-center justify-center w-8 h-8 rounded-full active:bg-white/10" type="button">
+<span class="material-symbols-outlined text-[19px]">refresh</span>
+</button>
+</div>
+</div>
+<!-- 2. Shared Component BottomNavBar: Authentic iOS 5-icon Safari Toolbar -->
+<!-- Executing JSON: bg-surface-container-high/80 backdrop-blur-2xl, destination_count 5, shadow-2xl -->
+<nav class="pointer-events-auto w-full ios-toolbar-glass border-none shadow-2xl px-4 pt-2 pb-1 flex justify-around items-center">
+<!-- Back Chevron (Dimmed/Inactive per JSON logic) -->
+<button aria-label="Back" class="flex items-center justify-center text-outline/50 p-2 active:scale-90 transition-transform duration-150 cursor-not-allowed" type="button">
+<span class="material-symbols-outlined text-[20px]" data-icon="arrow_back_ios">arrow_back_ios</span>
+</button>
+<!-- Forward Chevron (Disabled per iOS browser state) -->
+<button aria-label="Forward" class="flex items-center justify-center text-outline/30 p-2 active:scale-90 transition-transform duration-150 cursor-not-allowed" type="button">
+<span class="material-symbols-outlined text-[20px]" data-icon="arrow_forward_ios">arrow_forward_ios</span>
+</button>
+<!-- Share Sheet Action -->
+<button aria-label="Share" class="flex items-center justify-center text-primary p-2 active:scale-90 transition-transform duration-150 hover:text-primary" type="button">
+<span class="material-symbols-outlined text-[22px]" data-icon="ios_share">ios_share</span>
+</button>
+<!-- Bookmarks / Reading List (book icon) -->
+<button aria-label="Bookmarks" class="flex items-center justify-center text-on-surface-variant p-2 active:scale-90 transition-transform duration-150 hover:text-primary" type="button">
+<span class="material-symbols-outlined text-[22px]" data-icon="book">book</span>
+</button>
+<!-- Tabs Switcher (Square badge with count '3') -->
+<button aria-label="Tabs Switcher" class="flex items-center justify-center text-on-surface-variant p-2 active:scale-90 transition-transform duration-150 hover:text-primary relative" type="button">
+<div class="w-[21px] h-[21px] rounded-[5px] border-[1.75px] border-on-surface-variant flex items-center justify-center">
+<span class="text-[10px] font-bold text-on-surface-variant">3</span>
+</div>
+</button>
+</nav>
+<!-- 3. iOS Native Home Indicator Bar Zone -->
+<div class="pointer-events-auto w-full ios-toolbar-glass pb-2 pt-1 flex justify-center items-center">
+<div class="w-36 h-[5px] bg-on-surface/40 rounded-full"></div>
+</div>
+</div>
+<!-- Micro-interaction script for tactile address bar physics -->
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const addressBar = document.querySelector('.ios-glass-pill');
+      if (addressBar) {
+        let lastScroll = 0;
+        window.addEventListener('scroll', () => {
+          const currentScroll = window.pageYOffset;
+          if (currentScroll > lastScroll && currentScroll > 60) {
+            // Slight compact scale on fast scroll down
+            addressBar.style.transform = 'scale(0.96)';
+            addressBar.style.opacity = '0.92';
+          } else {
+            // Expand back on scroll up
+            addressBar.style.transform = 'scale(1)';
+            addressBar.style.opacity = '1';
+          }
+          lastScroll = currentScroll;
+        }, { passive: true });
+      }
+    });
+  </script>
+</body></html>
