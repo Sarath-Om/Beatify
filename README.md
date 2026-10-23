@@ -4,7 +4,7 @@
 
 ---
 
-## 1. Echo Music Technical Audit & GPL-3.0 License Compliance
+## 1. Music Technical Audit & GPL-3.0 License Compliance
 
 Beatify's YouTube Music search and stream-resolution layer was designed after auditing the open-source this repository:
 
