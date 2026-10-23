@@ -713,7 +713,7 @@ fun MusicSettingsScreen(
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = "${protectionReport.activeFilterCount} active rules • ${protectionReport.blockedRequestsCount} telemetry/ad requests filtered",
+                                text = "${protectionReport.activeFilterCount} block rules • ${protectionReport.allowlistRuleCount} allowlist rules • ${protectionReport.blockedRequestsCount} blocked / ${protectionReport.allowedEssentialCount} allowed",
                                 color = SystemGreen,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Medium
@@ -738,6 +738,17 @@ fun MusicSettingsScreen(
                         color = SecondaryTextZinc,
                         fontSize = 11.sp
                     )
+
+                    if (protectionReport.recentDiagnostics.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        val latest = protectionReport.recentDiagnostics.first()
+                        Text(
+                            text = "Last rule: [${latest.action}] ${latest.ruleId} (${latest.category}) on ${latest.normalizedHost}",
+                            color = SystemBlue,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(10.dp))
 
@@ -816,10 +827,10 @@ fun MusicSettingsScreen(
                 }
             }
 
-            // 8. About Beatify
+            // 8. About Beatify & GPL-3.0 / Third-Party Notices
             item {
                 SettingsCardContainer(
-                    title = "About Beatify",
+                    title = "About Beatify & Open-Source Notices",
                     icon = Icons.Default.Info,
                     iconTint = BeatifyAppleCrimson
                 ) {
@@ -842,6 +853,12 @@ fun MusicSettingsScreen(
                             )
                         }
                     }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Echo Music Reference & GPL-3.0 Attribution: Portions of the YouTube Music InnerTube protocol adapter are inspired by EchoMusicApp/Echo-Music (https://github.com/EchoMusicApp/Echo-Music), licensed under the GNU General Public License v3.0 (GPL-3.0). Third-party libraries include AndroidX Media3, Room, Jetpack Compose, OkHttp, Coil, and Firebase SDKs (Apache-2.0).",
+                        color = SecondaryTextZinc,
+                        fontSize = 11.sp
+                    )
                 }
             }
         }

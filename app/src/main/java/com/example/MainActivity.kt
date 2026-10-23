@@ -142,6 +142,23 @@ fun SynapseMusicApp(viewModel: SynapseViewModel) {
     val protectionReport by viewModel.protectionReport.collectAsStateWithLifecycle()
     val settingsStatusMessage by viewModel.settingsStatusMessage.collectAsStateWithLifecycle()
 
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val searchUiState by viewModel.searchUiState.collectAsStateWithLifecycle()
+    val remoteTrackResults by viewModel.remoteTrackResults.collectAsStateWithLifecycle()
+    val remoteArtistResults by viewModel.remoteArtistResults.collectAsStateWithLifecycle()
+    val remoteAlbumResults by viewModel.remoteAlbumResults.collectAsStateWithLifecycle()
+    val searchErrorMessage by viewModel.searchErrorMessage.collectAsStateWithLifecycle()
+
+    val catalogChannels by viewModel.catalogChannels.collectAsStateWithLifecycle()
+    val latestRssVideos by viewModel.latestRssVideos.collectAsStateWithLifecycle()
+    val selectedChannel by viewModel.selectedChannel.collectAsStateWithLifecycle()
+    val selectedChannelVideos by viewModel.selectedChannelVideos.collectAsStateWithLifecycle()
+    val totalCatalogChannels by viewModel.totalCatalogChannels.collectAsStateWithLifecycle()
+    val totalSyncedVideos by viewModel.totalSyncedVideos.collectAsStateWithLifecycle()
+    val isSyncingRssFeeds by viewModel.isSyncingRssFeeds.collectAsStateWithLifecycle()
+    val musicRadioFeed by viewModel.musicRadioFeed.collectAsStateWithLifecycle()
+    val isLoadingMusicRadioFeed by viewModel.isLoadingMusicRadioFeed.collectAsStateWithLifecycle()
+
     var notificationPermissionGranted by remember {
         mutableStateOf(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -247,8 +264,8 @@ fun SynapseMusicApp(viewModel: SynapseViewModel) {
                                 viewModel.addTrackToPlaylist(playlistId, track)
                             },
                             onImportAudioFiles = launchAudioPicker,
-                            onNavigateToSearch = {
-                                viewModel.selectDestination(MusicDestination.SEARCH)
+                            onNavigateToSearch = { initialQuery ->
+                                viewModel.selectDestination(MusicDestination.SEARCH, initialQuery)
                             },
                             onNavigateToRadio = {
                                 viewModel.selectDestination(MusicDestination.RADIO)
@@ -268,9 +285,31 @@ fun SynapseMusicApp(viewModel: SynapseViewModel) {
                             playlists = playlists,
                             playbackState = playbackState,
                             sortOption = sortOption,
+                            searchQuery = searchQuery,
+                            searchUiState = searchUiState,
+                            remoteTrackResults = remoteTrackResults,
+                            remoteArtistResults = remoteArtistResults,
+                            remoteAlbumResults = remoteAlbumResults,
+                            searchErrorMessage = searchErrorMessage,
+                            catalogChannels = catalogChannels,
+                            latestRssVideos = latestRssVideos,
+                            selectedChannel = selectedChannel,
+                            selectedChannelVideos = selectedChannelVideos,
+                            totalCatalogChannels = totalCatalogChannels,
+                            totalSyncedVideos = totalSyncedVideos,
+                            isSyncingRssFeeds = isSyncingRssFeeds,
+                            onSearchQueryChange = { viewModel.onSearchQueryChanged(it) },
+                            onSearchFocusChange = { viewModel.onSearchFocusChanged(it) },
+                            onRetryRemoteSearch = { viewModel.retryRemoteSearch() },
+                            onTriggerRssFeedSync = { viewModel.triggerRssFeedSync() },
+                            onSelectChannel = { viewModel.selectDiscoveryChannel(it) },
+                            onPlayRssVideo = { viewModel.playRssVideo(it) },
                             onChangeSortOption = { viewModel.setSortOption(it) },
                             onPlayTrackFromList = { track, list ->
                                 viewModel.playTrackFromList(track, list)
+                            },
+                            onPlayRemoteSearchResult = { result, list ->
+                                viewModel.playRemoteSearchResult(result, list)
                             },
                             onPlayAlbum = { viewModel.playAlbum(it) },
                             onPlayPlaylist = { viewModel.playPlaylist(it) },
@@ -293,6 +332,14 @@ fun SynapseMusicApp(viewModel: SynapseViewModel) {
                             onPlayPodcastEpisode = { viewModel.playPodcastEpisode(it) },
                             onToggleSubscription = { provider, resourceId, title ->
                                 viewModel.toggleSubscription(provider, resourceId, title)
+                            },
+                            musicRadioFeed = musicRadioFeed,
+                            isLoadingMusicRadioFeed = isLoadingMusicRadioFeed,
+                            onRefreshMusicRadioFeed = { playlistId ->
+                                viewModel.refreshMusicRadioFeed(playlistId)
+                            },
+                            onPlayMusicRadioEntry = { entry ->
+                                viewModel.playMusicRadioEntry(entry)
                             }
                         )
                     }

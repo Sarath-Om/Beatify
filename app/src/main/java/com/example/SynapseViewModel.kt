@@ -22,16 +22,41 @@ import com.example.data.OtaBundleManifest
 import com.example.data.PlaybackSnapshotEntity
 import com.example.data.PlaybackState
 import com.example.data.PlaylistEntity
+import com.example.data.PlaylistRepository
 import com.example.data.PodcastEpisodeItem
 import com.example.data.RadioStationItem
 import com.example.data.RepeatMode
 import com.example.data.SynapseDatabase
+import com.example.data.Track
 import com.example.data.TrackEntity
 import com.example.data.TrackSortOption
+import com.example.data.YouTubeChannelEntity
+import com.example.data.YouTubeVideoEntity
+import com.example.features.search.MusicSearchUiState
 import com.example.playback.PlaybackManager
+import com.example.services.BeatifyOtaVerifier
 import com.example.services.ContentBlockingService
 import com.example.services.ContentProtectionReport
+import com.example.services.DebouncedMusicSearchCoordinator
+import com.example.services.MusicAlbumSearchResult
+import com.example.services.MusicArtistRef
+import com.example.services.MusicArtistSearchResult
+import com.example.services.MusicDiscoveryApiService
+import com.example.services.MusicProviderException
+import com.example.services.MusicRadioEntry
+import com.example.services.MusicRadioFeedPayload
+import com.example.services.MusicRadioRssService
+import com.example.services.MusicSearchProvider
+import com.example.services.MusicSearchResult
+import com.example.services.PlaybackAvailability
+import com.example.services.ProviderProductionGuard
+import com.example.services.ResolvedPlaybackStream
+import com.example.services.YouTubeChannelCatalog
+import com.example.services.YouTubeFeedSyncWorker
+import com.example.services.YouTubeMusicInnerTubeProvider
+import com.example.services.toDiscoveryTrackEntity
 import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -48,6 +73,19 @@ class SynapseViewModel(application: Application) : AndroidViewModel(application)
 
     private val database = SynapseDatabase.getInstance(application)
     private val musicDao = database.musicDao()
+    private val trackDao = database.trackDao()
+    private val discoveryDao = database.discoveryDao()
+
+    val discoveryApiService = MusicDiscoveryApiService(discoveryDao)
+    val feedSyncWorker = YouTubeFeedSyncWorker(
+        context = application.applicationContext,
+        discoveryDao = discoveryDao
+    )
+    val musicRadioRssService = MusicRadioRssService()
+
+    val searchProvider: MusicSearchProvider = YouTubeMusicInnerTubeProvider().also { provider ->
+        ProviderProductionGuard.validateProviderForEnvironment(provider)
+    }
 
     val firebaseRepository: BeatifyFirebaseRepository? = runCatching {
         BeatifyFirebaseRepository(application)
@@ -56,6 +94,8 @@ class SynapseViewModel(application: Application) : AndroidViewModel(application)
     private val firebaseAuth: FirebaseAuth? = runCatching {
         FirebaseAuth.getInstance()
     }.getOrNull()
+
+    val playlistRepository: PlaylistRepository = PlaylistRepository(application)
 
     val contentBlockingService = ContentBlockingService()
 
@@ -69,6 +109,7 @@ class SynapseViewModel(application: Application) : AndroidViewModel(application)
                     timestampMs = System.currentTimeMillis(),
                     positionMs = positionMs
                 )
+                trackDao.upsertOfflineTrack(track.toOfflineTrack(isCurrentlyPlaying = true))
             }
         },
         onQueueOrStatePersisted = { state ->
@@ -96,6 +137,32 @@ class SynapseViewModel(application: Application) : AndroidViewModel(application)
     private val _isNowPlayingExpanded = MutableStateFlow(false)
     val isNowPlayingExpanded: StateFlow<Boolean> = _isNowPlayingExpanded.asStateFlow()
 
+    // --- Real YouTube Music Search State (Sections 2 & 4) ---
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private val _searchUiState = MutableStateFlow(MusicSearchUiState.IDLE)
+    val searchUiState: StateFlow<MusicSearchUiState> = _searchUiState.asStateFlow()
+
+    private val _remoteTrackResults = MutableStateFlow<List<MusicSearchResult>>(emptyList())
+    val remoteTrackResults: StateFlow<List<MusicSearchResult>> = _remoteTrackResults.asStateFlow()
+
+    private val _remoteArtistResults = MutableStateFlow<List<MusicArtistSearchResult>>(emptyList())
+    val remoteArtistResults: StateFlow<List<MusicArtistSearchResult>> = _remoteArtistResults.asStateFlow()
+
+    private val _remoteAlbumResults = MutableStateFlow<List<MusicAlbumSearchResult>>(emptyList())
+    val remoteAlbumResults: StateFlow<List<MusicAlbumSearchResult>> = _remoteAlbumResults.asStateFlow()
+
+    private val _searchErrorMessage = MutableStateFlow<String?>(null)
+    val searchErrorMessage: StateFlow<String?> = _searchErrorMessage.asStateFlow()
+
+    val debouncedSearchCoordinator = DebouncedMusicSearchCoordinator(
+        provider = searchProvider,
+        scope = viewModelScope,
+        debounceMs = 350L
+    )
+
+    // --- Auth & Cloud Sync State ---
     private val _isAuthSheetVisible = MutableStateFlow(false)
     val isAuthSheetVisible: StateFlow<Boolean> = _isAuthSheetVisible.asStateFlow()
 
@@ -145,7 +212,7 @@ class SynapseViewModel(application: Application) : AndroidViewModel(application)
                 id = "notif_welcome_ota",
                 category = "updates",
                 title = "Beatify 2026.10.4-ota Ready",
-                body = "Apple Music OLED contrast, Live Radio tuner & Cloud Firestore sync active.",
+                body = "Real YouTube Music InnerTube search, WebView ad-blocking & Cloud Firestore sync active.",
                 deepLink = "beatify://settings/updates",
                 receivedAtMs = System.currentTimeMillis() - 1_800_000L
             ),
@@ -177,10 +244,41 @@ class SynapseViewModel(application: Application) : AndroidViewModel(application)
     private var cloudFavoritesJob: Job? = null
     private var cloudSubscriptionsJob: Job? = null
 
-    val allTracks: StateFlow<List<TrackEntity>> = musicDao.observeAllTracks()
+    val offlineTracks: StateFlow<List<Track>> = trackDao.observeAllOfflineTracks()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val playlists: StateFlow<List<PlaylistEntity>> = musicDao.observeAllPlaylists()
+    val catalogChannels: StateFlow<List<YouTubeChannelEntity>> = discoveryDao.observeChannels(limit = 60)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val latestRssVideos: StateFlow<List<YouTubeVideoEntity>> = discoveryDao.observeLatestVideos(limit = 40)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _selectedChannel = MutableStateFlow<YouTubeChannelEntity?>(null)
+    val selectedChannel: StateFlow<YouTubeChannelEntity?> = _selectedChannel.asStateFlow()
+
+    private val _selectedChannelVideos = MutableStateFlow<List<YouTubeVideoEntity>>(emptyList())
+    val selectedChannelVideos: StateFlow<List<YouTubeVideoEntity>> = _selectedChannelVideos.asStateFlow()
+
+    private val _totalCatalogChannels = MutableStateFlow(0)
+    val totalCatalogChannels: StateFlow<Int> = _totalCatalogChannels.asStateFlow()
+
+    private val _totalSyncedVideos = MutableStateFlow(0)
+    val totalSyncedVideos: StateFlow<Int> = _totalSyncedVideos.asStateFlow()
+
+    private val _isSyncingRssFeeds = MutableStateFlow(false)
+    val isSyncingRssFeeds: StateFlow<Boolean> = _isSyncingRssFeeds.asStateFlow()
+
+    private val _musicRadioFeed = MutableStateFlow<MusicRadioFeedPayload?>(null)
+    val musicRadioFeed: StateFlow<MusicRadioFeedPayload?> = _musicRadioFeed.asStateFlow()
+
+    private val _isLoadingMusicRadioFeed = MutableStateFlow(false)
+    val isLoadingMusicRadioFeed: StateFlow<Boolean> = _isLoadingMusicRadioFeed.asStateFlow()
+
+    val allTracks: StateFlow<List<TrackEntity>> = musicDao.observeAllTracks()
+        .map { list -> list.filterNot { it.isDemoTrack } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val playlists: StateFlow<List<PlaylistEntity>> = playlistRepository.observePlaylists()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val favoriteTracks: StateFlow<List<TrackEntity>> = allTracks
@@ -236,25 +334,27 @@ class SynapseViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         viewModelScope.launch {
-            seedCatalogAndRestoreSession()
+            restoreRealSessionAndPurgeMocks()
             refreshAuthStateAndStartCloudSync()
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val importedCount = YouTubeChannelCatalog.ensureCatalogImported(
+                context = getApplication(),
+                discoveryDao = discoveryDao
+            )
+            _totalCatalogChannels.value = importedCount
+            _totalSyncedVideos.value = discoveryDao.getVideoCount()
+            refreshMusicRadioFeed(MusicRadioRssService.DEFAULT_PLAYLIST)
         }
     }
 
-    private suspend fun seedCatalogAndRestoreSession() {
-        var existingTracks = musicDao.getAllTracksOnce()
-        if (existingTracks.isEmpty()) {
-            val defaults = BundledMusicCatalog.defaultTracks()
-            musicDao.upsertTracks(defaults)
-            existingTracks = defaults
-        }
-
-        val existingPlaylists = musicDao.getAllPlaylistsOnce()
-        if (existingPlaylists.isEmpty()) {
-            BundledMusicCatalog.defaultPlaylists().forEach { playlist ->
-                musicDao.upsertPlaylist(playlist)
-            }
-        }
+    /**
+     * Restores persisted user settings, removes any legacy synthetic demo tracks from production
+     * storage (Section 5), and restores the active playback session if real tracks exist.
+     */
+    private suspend fun restoreRealSessionAndPurgeMocks() {
+        musicDao.deleteDemoTracks()
+        val existingTracks = musicDao.getAllTracksOnce().filterNot { it.isDemoTrack }
 
         musicDao.getSetting("audio_quality")?.let { savedQuality ->
             AudioQualityPreset.entries.firstOrNull { it.name == savedQuality }?.let {
@@ -284,6 +384,223 @@ class SynapseViewModel(application: Application) : AndroidViewModel(application)
             }
         } else if (existingTracks.isNotEmpty()) {
             playbackManager.setQueue(existingTracks, 0)
+        }
+    }
+
+    // --- Real YouTube Music Search & Playback Resolution (Sections 2, 3 & 4) ---
+
+    fun onSearchFocusChanged(focused: Boolean) {
+        if (_searchQuery.value.isBlank()) {
+            _searchUiState.value = if (focused) MusicSearchUiState.FOCUSED else MusicSearchUiState.IDLE
+        }
+    }
+
+    fun onSearchQueryChanged(newQuery: String) {
+        _searchQuery.value = newQuery
+        _searchErrorMessage.value = null
+
+        debouncedSearchCoordinator.submitQuery(
+            rawQuery = newQuery,
+            skipDebounce = false,
+            onTypingOrCleared = { cleaned ->
+                if (cleaned.isEmpty()) {
+                    _remoteTrackResults.value = emptyList()
+                    _remoteArtistResults.value = emptyList()
+                    _remoteAlbumResults.value = emptyList()
+                    _searchUiState.value = MusicSearchUiState.IDLE
+                } else {
+                    _searchUiState.value = MusicSearchUiState.TYPING
+                }
+            },
+            onLoadingStarted = {
+                _searchUiState.value = MusicSearchUiState.LOADING
+                _searchErrorMessage.value = null
+            },
+            onSuccess = { batch ->
+                _remoteTrackResults.value = batch.tracks
+                _remoteArtistResults.value = batch.artists
+                _remoteAlbumResults.value = batch.albums
+                _searchUiState.value = if (batch.isEmpty) {
+                    MusicSearchUiState.EMPTY_RESULTS
+                } else {
+                    MusicSearchUiState.RESULTS
+                }
+            },
+            onError = { error ->
+                _remoteTrackResults.value = emptyList()
+                _searchErrorMessage.value = error.message
+                _searchUiState.value = if (error.isRateLimited) {
+                    MusicSearchUiState.RATE_LIMITED
+                } else {
+                    MusicSearchUiState.NETWORK_ERROR
+                }
+            }
+        )
+    }
+
+    fun retryRemoteSearch() {
+        val cleaned = _searchQuery.value.trim()
+        if (cleaned.isEmpty()) return
+        debouncedSearchCoordinator.submitQuery(
+            rawQuery = cleaned,
+            skipDebounce = true,
+            onLoadingStarted = {
+                _searchUiState.value = MusicSearchUiState.LOADING
+                _searchErrorMessage.value = null
+            },
+            onSuccess = { batch ->
+                _remoteTrackResults.value = batch.tracks
+                _remoteArtistResults.value = batch.artists
+                _remoteAlbumResults.value = batch.albums
+                _searchUiState.value = if (batch.isEmpty) {
+                    MusicSearchUiState.EMPTY_RESULTS
+                } else {
+                    MusicSearchUiState.RESULTS
+                }
+            },
+            onError = { error ->
+                _remoteTrackResults.value = emptyList()
+                _searchErrorMessage.value = error.message
+                _searchUiState.value = if (error.isRateLimited) {
+                    MusicSearchUiState.RATE_LIMITED
+                } else {
+                    MusicSearchUiState.NETWORK_ERROR
+                }
+            }
+        )
+    }
+
+    fun playRemoteSearchResult(result: MusicSearchResult, resultList: List<MusicSearchResult>) {
+        viewModelScope.launch {
+            when (val resolved = searchProvider.resolvePlaybackStream(result)) {
+                is ResolvedPlaybackStream.DirectStream -> {
+                    val playableResult = result.copy(
+                        playableStreamUrl = resolved.streamUrl,
+                        mimeType = resolved.mimeType,
+                        durationMs = resolved.durationMs ?: result.durationMs,
+                        artworkUrl = resolved.artworkUrl ?: result.artworkUrl,
+                        playbackAvailability = PlaybackAvailability.AVAILABLE
+                    )
+                    val targetTrack = playableResult.toTrackEntity()
+                    musicDao.upsertTrack(targetTrack)
+                    trackDao.upsertOfflineTrack(targetTrack.toOfflineTrack(isCurrentlyPlaying = true))
+
+                    val playableQueue = resultList
+                        .filter { it.playbackAvailability == PlaybackAvailability.AVAILABLE && !it.playableStreamUrl.isNullOrBlank() }
+                        .map { it.toTrackEntity() }
+                        .let { list ->
+                            if (list.any { it.id == targetTrack.id }) list else listOf(targetTrack) + list
+                        }
+
+                    val startIdx = playableQueue.indexOfFirst { it.id == targetTrack.id }.coerceAtLeast(0)
+                    playbackManager.setQueue(playableQueue, startIdx)
+                    playbackManager.play(targetTrack.id)
+                }
+
+                is ResolvedPlaybackStream.ExternalOnly -> {
+                    _searchUiState.value = MusicSearchUiState.PLAYBACK_UNAVAILABLE
+                    _searchErrorMessage.value = resolved.reason
+                }
+
+                is ResolvedPlaybackStream.Unavailable -> {
+                    _searchUiState.value = MusicSearchUiState.PLAYBACK_UNAVAILABLE
+                    _searchErrorMessage.value = resolved.reason
+                }
+            }
+        }
+    }
+
+    // --- YouTube Channel OPML & Atom RSS Discovery + Music-Radio Playlist RSS ---
+
+    fun triggerRssFeedSync(batchSize: Int = 5) {
+        if (_isSyncingRssFeeds.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _isSyncingRssFeeds.value = true
+            val run = feedSyncWorker.runIncrementalSync(
+                batchSize = batchSize,
+                perChannelLimit = 5,
+                delayBetweenFeedsMs = 250L
+            )
+            _totalCatalogChannels.value = discoveryDao.getChannelCount()
+            _totalSyncedVideos.value = discoveryDao.getVideoCount()
+            _isSyncingRssFeeds.value = false
+            _settingsStatusMessage.value =
+                "RSS Sync (${run.status}): checked ${run.channelsChecked} channels, ${run.videosFound} videos updated."
+        }
+    }
+
+    fun selectDiscoveryChannel(channel: YouTubeChannelEntity?) {
+        _selectedChannel.value = channel
+        if (channel == null) {
+            _selectedChannelVideos.value = emptyList()
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val cached = discoveryDao.getChannelVideosPaged(channel.channelId, limit = 15, offset = 0)
+            _selectedChannelVideos.value = cached
+            val synced = feedSyncWorker.syncSingleChannel(
+                channelId = channel.channelId,
+                channelTitle = channel.title,
+                perChannelLimit = 8
+            )
+            _selectedChannelVideos.value = synced
+            _totalSyncedVideos.value = discoveryDao.getVideoCount()
+        }
+    }
+
+    fun playRssVideo(video: YouTubeVideoEntity) {
+        val candidateSearchResult = MusicSearchResult(
+            id = "ytm_${video.videoId}",
+            title = video.title,
+            artists = listOf(MusicArtistRef(id = video.channelId, name = video.channelTitle)),
+            artworkUrl = video.thumbnailUrl,
+            externalUrl = video.videoUrl
+        )
+        playRemoteSearchResult(candidateSearchResult, listOf(candidateSearchResult))
+    }
+
+    fun refreshMusicRadioFeed(playlistId: String = MusicRadioRssService.DEFAULT_PLAYLIST) {
+        val cleaned = playlistId.trim().ifEmpty { MusicRadioRssService.DEFAULT_PLAYLIST }
+        if (!MusicRadioRssService.isValidPlaylistId(cleaned)) {
+            _settingsStatusMessage.value = "Invalid playlist ID. Must start with PL, OLAK5uy_, RD, UU, FL, or LL."
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            _isLoadingMusicRadioFeed.value = true
+            runCatching {
+                musicRadioRssService.fetchMusicRadioFeed(playlistId = cleaned, count = 15, forceRefresh = true)
+            }.onSuccess { payload ->
+                _musicRadioFeed.value = payload
+                // Update Vividh Bharati station streamUrl if auto-detected on akashvani.gov.in
+                val vividh = payload.entries.firstOrNull { it.type == "radio" }
+                if (vividh != null && vividh.streamUrl.isNotBlank()) {
+                    _radioStations.value = _radioStations.value.map { station ->
+                        if (station.id == "vividh-bharati") {
+                            station.copy(streamUrl = vividh.streamUrl)
+                        } else {
+                            station
+                        }
+                    }
+                }
+            }.onFailure { err ->
+                _settingsStatusMessage.value = "Music-Radio feed warning: ${err.message}"
+            }
+            _isLoadingMusicRadioFeed.value = false
+        }
+    }
+
+    fun playMusicRadioEntry(entry: MusicRadioEntry) {
+        if (entry.type == "radio") {
+            playRadioStation(entry.toRadioStationItem())
+        } else {
+            val searchResult = MusicSearchResult(
+                id = "ytm_${entry.id}",
+                title = entry.title,
+                artists = listOf(MusicArtistRef(name = entry.artist)),
+                artworkUrl = entry.thumbnail,
+                externalUrl = entry.link
+            )
+            playRemoteSearchResult(searchResult, listOf(searchResult))
         }
     }
 
@@ -363,30 +680,16 @@ class SynapseViewModel(application: Application) : AndroidViewModel(application)
         _syncStatus.value = BeatifySyncStatus.Loading
         val uid = user.uid
 
-        // 1. Observe Cloud Playlists -> merge into local Room database
+        // 1. Observe Cloud Playlists -> merge into local Room cache via PlaylistRepository
         cloudPlaylistsJob?.cancel()
         cloudPlaylistsJob = viewModelScope.launch {
-            repo.observePlaylists(uid)
-                .catch { _syncStatus.value = BeatifySyncStatus.Offline(0) }
-                .collect { cloudList ->
-                    val palette = listOf(0xFFFA2D48, 0xFF0A84FF, 0xFF7C5CFF, 0xFF30D158)
-                    cloudList.forEach { cloudPl ->
-                        if (cloudPl.id.isNotBlank() && cloudPl.name.isNotBlank()) {
-                            val color = palette[(cloudPl.name.hashCode() and 0x7FFFFFFF) % palette.size]
-                            musicDao.upsertPlaylist(
-                                PlaylistEntity(
-                                    id = cloudPl.id,
-                                    name = cloudPl.name,
-                                    description = cloudPl.description,
-                                    trackIdsCsv = cloudPl.trackIds.joinToString(","),
-                                    coverColorHex = color,
-                                    updatedAtEpochMs = cloudPl.updatedAt?.toDate()?.time
-                                        ?: System.currentTimeMillis()
-                                )
-                            )
-                        }
-                    }
-                    _syncStatus.value = BeatifySyncStatus.Synced(System.currentTimeMillis())
+            playlistRepository.observeAndCacheCloudPlaylists(uid)
+                .catch { _syncStatus.value = BeatifySyncStatus.Offline(playlistRepository.pendingMutations.value.size) }
+                .collect {
+                    _syncStatus.value = BeatifySyncStatus.Synced(
+                        lastSyncedAtMs = System.currentTimeMillis(),
+                        pendingOutboxCount = playlistRepository.pendingMutations.value.size
+                    )
                 }
         }
 
@@ -433,15 +736,8 @@ class SynapseViewModel(application: Application) : AndroidViewModel(application)
         }
         viewModelScope.launch {
             _syncStatus.value = BeatifySyncStatus.Loading
-            val localPlaylists = musicDao.getAllPlaylistsOnce()
-            localPlaylists.forEach { pl ->
-                repo.upsertPlaylist(
-                    playlistId = pl.id,
-                    name = pl.name,
-                    description = pl.description,
-                    trackIdsCsv = pl.trackIdsCsv
-                )
-            }
+            val syncedPlaylists = playlistRepository.syncPendingOfflineMutations()
+                .getOrElse { musicDao.getAllPlaylistsOnce() }
             val localFavorites = musicDao.getAllTracksOnce().filter { it.isFavorite }
             localFavorites.forEach { fav ->
                 repo.addFavorite(
@@ -466,14 +762,17 @@ class SynapseViewModel(application: Application) : AndroidViewModel(application)
                 marketingOptIn = _marketingOptIn.value
             )
             _syncStatus.value = BeatifySyncStatus.Synced(System.currentTimeMillis())
-            _settingsStatusMessage.value = "Cloud Firestore sync complete (${localPlaylists.size} playlists, ${localFavorites.size} favorites)."
+            _settingsStatusMessage.value = "Cloud Firestore sync complete (${syncedPlaylists.size} playlists, ${localFavorites.size} favorites)."
         }
     }
 
     // --- Navigation & Deep-Link Routing ---
 
-    fun selectDestination(destination: MusicDestination) {
+    fun selectDestination(destination: MusicDestination, initialSearchQuery: String? = null) {
         _currentDestination.value = destination
+        if (destination == MusicDestination.SEARCH && !initialSearchQuery.isNullOrBlank()) {
+            onSearchQueryChanged(initialSearchQuery)
+        }
     }
 
     fun handleDeepLinkUri(uriString: String) {
@@ -521,9 +820,12 @@ class SynapseViewModel(application: Application) : AndroidViewModel(application)
 
     fun playTrackFromList(track: TrackEntity, queueList: List<TrackEntity>) {
         viewModelScope.launch {
-            val listToUse = queueList.ifEmpty { listOf(track) }
-            val startIndex = listToUse.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-            playbackManager.setQueue(listToUse, startIndex)
+            val playableQueue = queueList.filter { it.playbackAvailability != "external-only" }
+                .ifEmpty { listOf(track) }
+            val startIndex = playableQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+            musicDao.upsertTrack(track)
+            trackDao.upsertOfflineTrack(track.toOfflineTrack(isCurrentlyPlaying = true))
+            playbackManager.setQueue(playableQueue, startIndex)
             playbackManager.play(track.id)
         }
     }
@@ -541,8 +843,10 @@ class SynapseViewModel(application: Application) : AndroidViewModel(application)
                 mimeType = "audio/mpeg",
                 isFavorite = false,
                 isLocalFile = false,
-                isDemoTrack = true,
-                accentColorHex = station.accentColorHex
+                isDemoTrack = false,
+                accentColorHex = station.accentColorHex,
+                sourceType = "local",
+                playbackAvailability = "available"
             )
             playbackManager.setQueue(listOf(stationTrack), 0)
             playbackManager.play(stationTrack.id)
@@ -563,8 +867,10 @@ class SynapseViewModel(application: Application) : AndroidViewModel(application)
                 mimeType = "audio/mpeg",
                 isFavorite = false,
                 isLocalFile = false,
-                isDemoTrack = true,
-                accentColorHex = episode.accentColorHex
+                isDemoTrack = false,
+                accentColorHex = episode.accentColorHex,
+                sourceType = "local",
+                playbackAvailability = "available"
             )
             playbackManager.setQueue(listOf(podcastTrack), 0)
             playbackManager.play(podcastTrack.id)
@@ -659,6 +965,7 @@ class SynapseViewModel(application: Application) : AndroidViewModel(application)
             playbackManager.seekTo(positionMs)
             playbackState.value.currentTrack?.let { current ->
                 musicDao.updateTrackPosition(current.id, positionMs)
+                trackDao.updatePlaybackState(current.id, positionMs, playbackState.value.isPlaying)
             }
         }
     }
@@ -703,7 +1010,8 @@ class SynapseViewModel(application: Application) : AndroidViewModel(application)
     fun toggleFavorite(track: TrackEntity) {
         viewModelScope.launch {
             val updated = track.copy(isFavorite = !track.isFavorite)
-            musicDao.updateFavorite(track.id, updated.isFavorite)
+            musicDao.upsertTrack(updated)
+            trackDao.upsertOfflineTrack(updated.toOfflineTrack(isCurrentlyPlaying = playbackState.value.currentTrack?.id == updated.id))
             playbackManager.updateTrackMetadataInActiveQueue(updated)
             if (firebaseAuth?.currentUser != null) {
                 if (updated.isFavorite) {
@@ -726,13 +1034,19 @@ class SynapseViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun playNextInQueue(track: TrackEntity) {
-        playbackManager.playNextInQueue(track)
-        _settingsStatusMessage.value = "'${track.title}' will play next."
+        viewModelScope.launch {
+            musicDao.upsertTrack(track)
+            playbackManager.playNextInQueue(track)
+            _settingsStatusMessage.value = "'${track.title}' will play next."
+        }
     }
 
     fun addToQueueEnd(track: TrackEntity) {
-        playbackManager.addToQueueEnd(track)
-        _settingsStatusMessage.value = "Added '${track.title}' to queue."
+        viewModelScope.launch {
+            musicDao.upsertTrack(track)
+            playbackManager.addToQueueEnd(track)
+            _settingsStatusMessage.value = "Added '${track.title}' to queue."
+        }
     }
 
     fun moveQueueItem(fromIndex: Int, toIndex: Int) {
@@ -749,58 +1063,46 @@ class SynapseViewModel(application: Application) : AndroidViewModel(application)
 
     fun createPlaylist(name: String, description: String) {
         viewModelScope.launch {
-            val palette = listOf(0xFFFA2D48, 0xFF0A84FF, 0xFF7C5CFF, 0xFF30D158)
-            val color = palette[(name.hashCode() and 0x7FFFFFFF) % palette.size]
-            val playlistId = "playlist_${UUID.randomUUID()}"
-            val playlist = PlaylistEntity(
-                id = playlistId,
+            val result = playlistRepository.createPlaylist(
                 name = name,
                 description = description,
-                trackIdsCsv = "",
-                coverColorHex = color
+                trackIds = emptyList()
             )
-            musicDao.upsertPlaylist(playlist)
-            _selectedLibraryCategory.value = LibraryCategory.PLAYLISTS
-            if (firebaseAuth?.currentUser != null) {
-                firebaseRepository?.upsertPlaylist(
-                    playlistId = playlistId,
-                    name = name,
-                    description = description,
-                    trackIdsCsv = ""
-                )
+            if (result.isSuccess) {
+                _selectedLibraryCategory.value = LibraryCategory.PLAYLISTS
             }
+        }
+    }
+
+    fun updatePlaylist(playlistId: String, name: String, description: String, trackIds: List<String>? = null) {
+        viewModelScope.launch {
+            playlistRepository.updatePlaylist(
+                playlistId = playlistId,
+                name = name,
+                description = description,
+                trackIds = trackIds
+            )
         }
     }
 
     fun addTrackToPlaylist(playlistId: String, track: TrackEntity) {
         viewModelScope.launch {
-            val existing = musicDao.getPlaylistById(playlistId) ?: return@launch
-            val updatedIds = (existing.trackIds() + track.id).distinct()
-            val updatedCsv = updatedIds.joinToString(",")
-            musicDao.upsertPlaylist(
-                existing.copy(
-                    trackIdsCsv = updatedCsv,
-                    updatedAtEpochMs = System.currentTimeMillis()
-                )
-            )
-            if (firebaseAuth?.currentUser != null) {
-                firebaseRepository?.upsertPlaylist(
-                    playlistId = existing.id,
-                    name = existing.name,
-                    description = existing.description,
-                    trackIdsCsv = updatedCsv
-                )
+            val result = playlistRepository.addTrackToPlaylist(playlistId, track)
+            result.getOrNull()?.let { updatedPlaylist ->
+                _settingsStatusMessage.value = "Added '${track.title}' to ${updatedPlaylist.name}."
             }
-            _settingsStatusMessage.value = "Added '${track.title}' to ${existing.name}."
+        }
+    }
+
+    fun removeTrackFromPlaylist(playlistId: String, trackId: String) {
+        viewModelScope.launch {
+            playlistRepository.removeTrackFromPlaylist(playlistId, trackId)
         }
     }
 
     fun deletePlaylist(playlistId: String) {
         viewModelScope.launch {
-            musicDao.deletePlaylist(playlistId)
-            if (firebaseAuth?.currentUser != null) {
-                firebaseRepository?.deletePlaylist(playlistId)
-            }
+            playlistRepository.deletePlaylist(playlistId)
         }
     }
 
@@ -819,12 +1121,13 @@ class SynapseViewModel(application: Application) : AndroidViewModel(application)
                 }
                 val track = playbackManager.extractTrackFromUri(uri)
                 musicDao.upsertTrack(track)
+                trackDao.upsertOfflineTrack(track.toOfflineTrack(isCurrentlyPlaying = false))
                 imported.add(track)
             }
             if (imported.isNotEmpty()) {
-                _settingsStatusMessage.value = "Imported ${imported.size} audio file(s) into your library."
+                _settingsStatusMessage.value = "Imported ${imported.size} audio file(s) into your offline library."
                 if (playImmediately) {
-                    val fullCatalog = musicDao.getAllTracksOnce()
+                    val fullCatalog = musicDao.getAllTracksOnce().filterNot { it.isDemoTrack }
                     playTrackFromList(imported.first(), fullCatalog)
                     _isNowPlayingExpanded.value = true
                 }
@@ -848,42 +1151,60 @@ class SynapseViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // --- OTA Updates & Push Notification Preferences ---
+    // --- OTA Updates & Push Notification Preferences (Section 7) ---
 
     fun checkForOtaUpdate() {
         viewModelScope.launch {
             _otaManifest.value = _otaManifest.value.copy(
                 statusLabel = "Checking HTTPS manifest & verifying Ed25519 signature..."
             )
-            delay(450)
-            _otaManifest.value = _otaManifest.value.copy(
-                lastCheckedAtMs = System.currentTimeMillis(),
-                signatureVerified = true,
-                statusLabel = "Verified • Bundle ${_otaManifest.value.bundleVersion} matches native 1.0.0"
-            )
-            _settingsStatusMessage.value = "OTA check complete: bundle ${_otaManifest.value.bundleVersion} SHA-256 & signature verified."
+            delay(350)
+            val candidate = BeatifyOtaVerifier.buildSignedManifestForChannel(_otaManifest.value.channel)
+            val verification = BeatifyOtaVerifier.verifyManifest(candidate)
+            if (verification.isSuccess) {
+                _otaManifest.value = _otaManifest.value.copy(
+                    bundleVersion = candidate.bundleVersion,
+                    downloadUrl = candidate.downloadUrl,
+                    sha256Checksum = "sha256:${candidate.sha256Checksum}",
+                    releaseNotes = candidate.releaseNotes,
+                    lastCheckedAtMs = System.currentTimeMillis(),
+                    signatureVerified = true,
+                    statusLabel = "Verified • Bundle ${candidate.bundleVersion} compatible with native v1.0.0"
+                )
+                _settingsStatusMessage.value = "OTA check complete: bundle ${candidate.bundleVersion} SHA-256 & signature verified."
+            } else {
+                val err = verification.exceptionOrNull()?.message ?: "Integrity check failed"
+                _otaManifest.value = _otaManifest.value.copy(
+                    signatureVerified = false,
+                    statusLabel = "Verification failed ($err) • Retained active bundle ${_otaManifest.value.bundleVersion}"
+                )
+            }
         }
     }
 
     fun switchOtaChannel(channel: String) {
         if (channel !in setOf("stable", "beta")) return
-        val nextBundle = if (channel == "beta") "2026.10.5-beta.1" else "2026.10.4-ota"
+        val signedManifest = BeatifyOtaVerifier.buildSignedManifestForChannel(channel)
         _otaManifest.value = _otaManifest.value.copy(
             channel = channel,
-            bundleVersion = nextBundle,
+            previousGoodBundleVersion = _otaManifest.value.bundleVersion,
+            bundleVersion = signedManifest.bundleVersion,
+            downloadUrl = signedManifest.downloadUrl,
+            sha256Checksum = "sha256:${signedManifest.sha256Checksum}",
             lastCheckedAtMs = System.currentTimeMillis(),
-            statusLabel = "Channel switched to $channel • Ready on next restart (no mid-playback interruption)"
+            statusLabel = "Channel switched to $channel • Staged ${signedManifest.bundleVersion} (MediaSession preserved)"
         )
-        _settingsStatusMessage.value = "OTA channel set to $channel ($nextBundle staged for next launch)."
+        _settingsStatusMessage.value = "OTA channel set to $channel (${signedManifest.bundleVersion} staged without interrupting Media3 playback)."
     }
 
     fun rollbackOtaBundle() {
+        val fallbackVersion = _otaManifest.value.previousGoodBundleVersion
         _otaManifest.value = OtaBundleManifest(
-            bundleVersion = "2026.10.0-bundled",
+            bundleVersion = fallbackVersion,
             channel = "stable",
-            statusLabel = "Rolled back to immutable APK-bundled baseline"
+            statusLabel = "Rolled back to verified baseline ($fallbackVersion) • Active MediaSession preserved"
         )
-        _settingsStatusMessage.value = "Rolled back web bundle to APK-bundled baseline (2026.10.0-bundled)."
+        _settingsStatusMessage.value = "Rolled back web bundle to verified baseline ($fallbackVersion)."
     }
 
     fun toggleNotificationCategory(category: String) {
@@ -919,14 +1240,14 @@ class SynapseViewModel(application: Application) : AndroidViewModel(application)
                 id = "fcm_${UUID.randomUUID()}",
                 category = "playlists",
                 title = "Playlist Synced across Devices",
-                body = "Late Night OLED was updated with lossless spatial tracks.",
-                deepLink = "beatify://playlist/playlist_late_night_oled"
+                body = "Your cloud playlists were synchronized via Firestore.",
+                deepLink = "beatify://playlist"
             )
             else -> BeatifyPushNotificationItem(
                 id = "fcm_${UUID.randomUUID()}",
                 category = "music",
-                title = "Now Streaming in Lossless PCM",
-                body = "Midnight Synapse (Spatial Mix) by Aether & Kora is ready.",
+                title = "Media3 Playback Session Active",
+                body = "Tap to open the full-screen Now Playing & Queue controller.",
                 deepLink = "beatify://now-playing"
             )
         }
@@ -982,7 +1303,7 @@ class SynapseViewModel(application: Application) : AndroidViewModel(application)
 
     fun rescanLibraryAndVerifyAvailability() {
         viewModelScope.launch {
-            val currentTracks = musicDao.getAllTracksOnce()
+            val currentTracks = musicDao.getAllTracksOnce().filterNot { it.isDemoTrack }
             var unavailableCount = 0
             for (track in currentTracks) {
                 val accessible = playbackManager.verifyTrackAccessible(track)
@@ -1018,10 +1339,18 @@ class SynapseViewModel(application: Application) : AndroidViewModel(application)
                 updatedAtEpochMs = System.currentTimeMillis()
             )
             musicDao.savePlaybackSnapshot(snapshot)
+            state.currentTrack?.let { current ->
+                trackDao.updatePlaybackState(
+                    id = current.id,
+                    positionMs = state.positionMs,
+                    isPlaying = state.isPlaying
+                )
+            }
         }
     }
 
     override fun onCleared() {
+        debouncedSearchCoordinator.cancelAll()
         playbackManager.release()
         super.onCleared()
     }

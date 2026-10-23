@@ -130,20 +130,39 @@ fun MiniPlayerPill(
 
     Surface(
         color = ElevatedSurface.copy(alpha = 0.96f),
-        shape = RoundedCornerShape(18.dp),
+        tonalElevation = 8.dp,
         shadowElevation = 12.dp,
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
         modifier = modifier
             .fillMaxWidth()
-            .border(1.dp, SpecularBorderLight, RoundedCornerShape(18.dp))
-            .clip(RoundedCornerShape(18.dp))
+            .border(
+                1.dp,
+                SpecularBorderLight,
+                RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 18.dp, bottomEnd = 18.dp)
+            )
+            .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 18.dp, bottomEnd = 18.dp))
             .clickable { onOpenNowPlaying() }
             .testTag("mini_player_bar")
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Persistent Material3 Bottom Sheet Drag Handle indicator
+            Box(
+                modifier = Modifier
+                    .padding(top = 5.dp)
+                    .width(32.dp)
+                    .height(3.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.24f))
+                    .testTag("persistent_player_sheet_handle")
+            )
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                    .padding(horizontal = 10.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 TrackArtworkSquare(
@@ -160,17 +179,39 @@ fun MiniPlayerPill(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.Center
                 ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = track.title,
+                            color = LabelPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        SourceBadgePill(
+                            isLocal = track.isLocalFile,
+                            isAvailable = track.isAvailable,
+                            sourceType = track.sourceType,
+                            playbackAvailability = track.playbackAvailability
+                        )
+                    }
                     Text(
-                        text = track.title,
-                        color = LabelPrimary,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = track.artist,
-                        color = SecondaryTextZinc,
+                        text = if (playbackState.isBuffering) {
+                            "Buffering stream • ${track.artist}"
+                        } else {
+                            buildString {
+                                append(track.artist)
+                                track.album?.takeIf { it.isNotBlank() }?.let {
+                                    append(" • ")
+                                    append(it)
+                                }
+                            }
+                        },
+                        color = if (playbackState.isBuffering) SystemBlue else SecondaryTextZinc,
                         fontSize = 12.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -196,7 +237,7 @@ fun MiniPlayerPill(
                     modifier = Modifier
                         .size(48.dp)
                         .clip(CircleShape)
-                        .background(SystemBlue.copy(alpha = 0.18f))
+                        .background(BeatifyAppleCrimson.copy(alpha = 0.22f))
                         .testTag("mini_player_play_pause_button")
                 ) {
                     Icon(
@@ -222,14 +263,24 @@ fun MiniPlayerPill(
                 }
             }
 
-            LinearProgressIndicator(
-                progress = { progress },
-                color = SystemBlue,
-                trackColor = Color.White.copy(alpha = 0.08f),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(2.5.dp)
-            )
+            if (playbackState.isBuffering) {
+                LinearProgressIndicator(
+                    color = BeatifyAppleCrimson,
+                    trackColor = Color.White.copy(alpha = 0.08f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.5.dp)
+                )
+            } else {
+                LinearProgressIndicator(
+                    progress = { progress },
+                    color = BeatifyAppleCrimson,
+                    trackColor = Color.White.copy(alpha = 0.08f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.5.dp)
+                )
+            }
         }
     }
 }

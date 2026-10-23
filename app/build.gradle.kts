@@ -65,6 +65,11 @@ android {
     buildConfig = true
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
+  sourceSets {
+    getByName("main") {
+      assets.srcDirs("src/main/assets", "../public/assets/aistudio")
+    }
+  }
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true

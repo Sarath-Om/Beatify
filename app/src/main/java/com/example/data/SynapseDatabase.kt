@@ -1,9 +1,12 @@
 package com.example.data
 
 import android.content.Context
+import androidx.annotation.VisibleForTesting
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
@@ -47,11 +50,14 @@ data class PodcastEpisodeItem(
 
 data class OtaBundleManifest(
     val bundleVersion: String = "2026.10.4-ota",
+    val previousGoodBundleVersion: String = "2026.10.0-bundled",
     val targetNativeVersion: String = "1.0.0",
+    val minNativeVersionCode: Int = 1,
     val channel: String = "stable",
+    val downloadUrl: String = "https://updates.beatify.in/bundles/stable/2026.10.4-ota/bundle.zip",
     val sha256Checksum: String = "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
     val signatureVerified: Boolean = true,
-    val releaseNotes: String = "Apple Music OLED contrast tuning, lossless gapless handoff, and Firestore offline outbox optimizations.",
+    val releaseNotes: String = "Real YouTube Music InnerTube search, responsive search bar, WebView request filtering, and Material 3 persistent player sheet.",
     val lastCheckedAtMs: Long = System.currentTimeMillis(),
     val statusLabel: String = "Up to date • Ed25519 Signature & SHA-256 Verified"
 )
@@ -101,7 +107,48 @@ enum class AudioQualityPreset(val label: String, val description: String, val bi
 }
 
 /**
- * Authoritative Track contract matching Section 4.3 `Track` interface.
+ * Room `Track` entity storing local metadata and playback state for offline music access.
+ */
+@Entity(tableName = "track")
+data class Track(
+    @PrimaryKey val id: String,
+    val title: String,
+    val artist: String,
+    val album: String? = null,
+    val durationMs: Long = 0L,
+    val artworkUri: String? = null,
+    val localUri: String,
+    val mimeType: String = "audio/mpeg",
+    val source: String = "local",
+    val playbackAvailability: String = "available",
+    val isFavorite: Boolean = false,
+    val isPlaying: Boolean = false,
+    val lastPlaybackPositionMs: Long = 0L,
+    val playCount: Int = 0,
+    val updatedAtEpochMs: Long = System.currentTimeMillis()
+) {
+    fun toTrackEntity(): TrackEntity = TrackEntity(
+        id = id,
+        title = title,
+        artist = artist,
+        album = album,
+        durationMs = durationMs,
+        artworkUri = artworkUri,
+        contentUri = localUri,
+        mimeType = mimeType,
+        isFavorite = isFavorite,
+        isLocalFile = source == "local",
+        isDemoTrack = false,
+        lastPositionMs = lastPlaybackPositionMs,
+        playCount = playCount,
+        isAvailable = playbackAvailability == "available",
+        sourceType = source,
+        playbackAvailability = playbackAvailability
+    )
+}
+
+/**
+ * Authoritative TrackEntity used across playback queue, Room `tracks` table, and UI.
  */
 @Entity(tableName = "tracks")
 data class TrackEntity(
@@ -121,8 +168,29 @@ data class TrackEntity(
     val lastPositionMs: Long = 0L,
     val playCount: Int = 0,
     val isAvailable: Boolean = true,
-    val accentColorHex: Long = 0xFF0A84FF
-)
+    val accentColorHex: Long = 0xFF0A84FF,
+    val sourceType: String = if (isLocalFile) "local" else "youtube-music",
+    val playbackAvailability: String = if (isAvailable) "available" else "unavailable",
+    val externalLaunchUri: String? = null
+) {
+    fun toOfflineTrack(isCurrentlyPlaying: Boolean = false): Track = Track(
+        id = id,
+        title = title,
+        artist = artist,
+        album = album,
+        durationMs = durationMs,
+        artworkUri = artworkUri,
+        localUri = contentUri,
+        mimeType = mimeType,
+        source = sourceType,
+        playbackAvailability = playbackAvailability,
+        isFavorite = isFavorite,
+        isPlaying = isCurrentlyPlaying,
+        lastPlaybackPositionMs = lastPositionMs,
+        playCount = playCount,
+        updatedAtEpochMs = System.currentTimeMillis()
+    )
+}
 
 @Entity(tableName = "playlists")
 data class PlaylistEntity(
@@ -162,7 +230,7 @@ data class MusicSettingEntity(
 )
 
 /**
- * Authoritative PlaybackState contract matching Section 4.3 `PlaybackState`.
+ * Authoritative PlaybackState contract.
  */
 data class PlaybackState(
     val isPlaying: Boolean = false,
@@ -196,6 +264,33 @@ data class ArtistSummary(
     val albumCount: Int
 )
 
+/**
+ * DAO for the `Track` entity storing offline local metadata and playback state.
+ */
+@Dao
+interface TrackDao {
+    @Query("SELECT * FROM track ORDER BY updatedAtEpochMs DESC")
+    fun observeAllOfflineTracks(): Flow<List<Track>>
+
+    @Query("SELECT * FROM track ORDER BY updatedAtEpochMs DESC")
+    suspend fun getAllOfflineTracksOnce(): List<Track>
+
+    @Query("SELECT * FROM track WHERE id = :id LIMIT 1")
+    suspend fun getOfflineTrackById(id: String): Track?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertOfflineTrack(track: Track)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertOfflineTracks(tracks: List<Track>)
+
+    @Query("UPDATE track SET lastPlaybackPositionMs = :positionMs, isPlaying = :isPlaying, updatedAtEpochMs = :updatedAtMs WHERE id = :id")
+    suspend fun updatePlaybackState(id: String, positionMs: Long, isPlaying: Boolean, updatedAtMs: Long = System.currentTimeMillis())
+
+    @Query("DELETE FROM track WHERE id = :id")
+    suspend fun deleteOfflineTrack(id: String)
+}
+
 @Dao
 interface SynapseMusicDao {
     @Query("SELECT * FROM tracks ORDER BY addedAtEpochMs DESC")
@@ -216,6 +311,9 @@ interface SynapseMusicDao {
     @Query("DELETE FROM tracks WHERE id = :trackId")
     suspend fun deleteTrackById(trackId: String)
 
+    @Query("DELETE FROM tracks WHERE isDemoTrack = 1")
+    suspend fun deleteDemoTracks()
+
     @Query("UPDATE tracks SET isFavorite = :isFavorite WHERE id = :trackId")
     suspend fun updateFavorite(trackId: String, isFavorite: Boolean)
 
@@ -225,8 +323,12 @@ interface SynapseMusicDao {
     @Query("UPDATE tracks SET lastPositionMs = :positionMs WHERE id = :trackId")
     suspend fun updateTrackPosition(trackId: String, positionMs: Long)
 
-    @Query("UPDATE tracks SET isAvailable = :isAvailable WHERE id = :trackId")
-    suspend fun updateTrackAvailability(trackId: String, isAvailable: Boolean)
+    @Query("UPDATE tracks SET isAvailable = :isAvailable, playbackAvailability = :availabilityWire WHERE id = :trackId")
+    suspend fun updateTrackAvailability(
+        trackId: String,
+        isAvailable: Boolean,
+        availabilityWire: String = if (isAvailable) "available" else "unavailable"
+    )
 
     // Playlists
     @Query("SELECT * FROM playlists ORDER BY updatedAtEpochMs DESC")
@@ -262,18 +364,277 @@ interface SynapseMusicDao {
     suspend fun putSetting(setting: MusicSettingEntity)
 }
 
+/**
+ * Room Entity for `youtube_channels` (Section 4 Database Design).
+ * Stores OPML-imported YouTube Music channels and their RSS feed synchronization state.
+ */
+@Entity(
+    tableName = "youtube_channels",
+    indices = [
+        Index(value = ["channel_id"], unique = true),
+        Index(value = ["title"]),
+        Index(value = ["sync_status"]),
+        Index(value = ["last_checked_at"])
+    ]
+)
+data class YouTubeChannelEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "channel_id")
+    val channelId: String,
+    @ColumnInfo(name = "title")
+    val title: String,
+    @ColumnInfo(name = "rss_url")
+    val rssUrl: String,
+    @ColumnInfo(name = "channel_url")
+    val channelUrl: String,
+    @ColumnInfo(name = "last_checked_at")
+    val lastCheckedAt: Long = 0L,
+    @ColumnInfo(name = "last_success_at")
+    val lastSuccessAt: Long = 0L,
+    @ColumnInfo(name = "sync_status")
+    val syncStatus: String = "PENDING",
+    @ColumnInfo(name = "last_error_code")
+    val lastErrorCode: String? = null
+)
+
+/**
+ * Room Entity for `youtube_videos` (Section 4 Database Design).
+ * Stores synchronized YouTube channel Atom RSS video/release metadata.
+ */
+@Entity(
+    tableName = "youtube_videos",
+    indices = [
+        Index(value = ["video_id"], unique = true),
+        Index(value = ["channel_id"]),
+        Index(value = ["published_at"]),
+        Index(value = ["published_epoch_ms"]),
+        Index(value = ["title"]),
+        Index(value = ["channel_title"])
+    ]
+)
+data class YouTubeVideoEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "video_id")
+    val videoId: String,
+    @ColumnInfo(name = "channel_id")
+    val channelId: String,
+    @ColumnInfo(name = "channel_title")
+    val channelTitle: String,
+    @ColumnInfo(name = "title")
+    val title: String,
+    @ColumnInfo(name = "video_url")
+    val videoUrl: String,
+    @ColumnInfo(name = "published_at")
+    val publishedAt: String,
+    @ColumnInfo(name = "published_epoch_ms")
+    val publishedEpochMs: Long = 0L,
+    @ColumnInfo(name = "thumbnail_url")
+    val thumbnailUrl: String? = null,
+    @ColumnInfo(name = "description")
+    val description: String? = null,
+    @ColumnInfo(name = "views_count")
+    val viewsCount: Long = 0L,
+    @ColumnInfo(name = "first_seen_at")
+    val firstSeenAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(name = "last_seen_at")
+    val lastSeenAt: Long = System.currentTimeMillis()
+)
+
+/**
+ * Room Entity for `feed_sync_runs` (Section 4 Database Design).
+ * Tracks background RSS feed synchronization runs with bounded retention.
+ */
+@Entity(
+    tableName = "feed_sync_runs",
+    indices = [
+        Index(value = ["started_at"])
+    ]
+)
+data class FeedSyncRunEntity(
+    @PrimaryKey
+    @ColumnInfo(name = "id")
+    val id: String,
+    @ColumnInfo(name = "started_at")
+    val startedAt: Long,
+    @ColumnInfo(name = "completed_at")
+    val completedAt: Long? = null,
+    @ColumnInfo(name = "channels_checked")
+    val channelsChecked: Int = 0,
+    @ColumnInfo(name = "videos_found")
+    val videosFound: Int = 0,
+    @ColumnInfo(name = "channels_failed")
+    val channelsFailed: Int = 0,
+    @ColumnInfo(name = "status")
+    val status: String = "RUNNING"
+)
+
+/**
+ * DAO for YouTube Channel Catalog, RSS Video Discovery, and Sync Run History.
+ */
+@Dao
+interface YouTubeDiscoveryDao {
+    @Query("SELECT COUNT(*) FROM youtube_channels")
+    suspend fun getChannelCount(): Int
+
+    @Query("SELECT COUNT(*) FROM youtube_videos")
+    suspend fun getVideoCount(): Int
+
+    @Query("SELECT * FROM youtube_channels ORDER BY title ASC LIMIT :limit OFFSET :offset")
+    suspend fun getChannelsPaged(limit: Int, offset: Int): List<YouTubeChannelEntity>
+
+    @Query("SELECT * FROM youtube_channels ORDER BY last_success_at DESC, title ASC LIMIT :limit")
+    fun observeChannels(limit: Int = 100): Flow<List<YouTubeChannelEntity>>
+
+    @Query(
+        """
+        SELECT * FROM youtube_channels
+        WHERE title LIKE '%' || :query || '%' OR channel_id LIKE '%' || :query || '%'
+        ORDER BY title ASC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    suspend fun searchChannelsPaged(query: String, limit: Int, offset: Int): List<YouTubeChannelEntity>
+
+    @Query("SELECT * FROM youtube_channels WHERE channel_id = :channelId LIMIT 1")
+    suspend fun getChannelById(channelId: String): YouTubeChannelEntity?
+
+    @Query(
+        """
+        SELECT * FROM youtube_channels
+        WHERE last_checked_at < :staleBeforeMs
+        ORDER BY last_checked_at ASC
+        LIMIT :limit
+        """
+    )
+    suspend fun getEligibleChannelsForSync(staleBeforeMs: Long, limit: Int): List<YouTubeChannelEntity>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertChannelsIgnore(channels: List<YouTubeChannelEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertChannels(channels: List<YouTubeChannelEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertChannel(channel: YouTubeChannelEntity)
+
+    @Query(
+        """
+        UPDATE youtube_channels
+        SET last_checked_at = :checkedAt,
+            last_success_at = CASE WHEN :syncStatus = 'OK' THEN :checkedAt ELSE last_success_at END,
+            sync_status = :syncStatus,
+            last_error_code = :errorCode
+        WHERE channel_id = :channelId
+        """
+    )
+    suspend fun updateChannelSyncStatus(
+        channelId: String,
+        checkedAt: Long,
+        syncStatus: String,
+        errorCode: String?
+    )
+
+    // Videos
+    @Query("SELECT * FROM youtube_videos WHERE video_id = :videoId LIMIT 1")
+    suspend fun getVideoById(videoId: String): YouTubeVideoEntity?
+
+    @Query(
+        """
+        SELECT * FROM youtube_videos
+        WHERE channel_id = :channelId
+        ORDER BY published_epoch_ms DESC, published_at DESC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    suspend fun getChannelVideosPaged(channelId: String, limit: Int, offset: Int): List<YouTubeVideoEntity>
+
+    @Query(
+        """
+        SELECT * FROM youtube_videos
+        WHERE title LIKE '%' || :query || '%'
+           OR channel_title LIKE '%' || :query || '%'
+           OR COALESCE(description, '') LIKE '%' || :query || '%'
+        ORDER BY published_epoch_ms DESC, views_count DESC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    suspend fun searchVideosPaged(query: String, limit: Int, offset: Int): List<YouTubeVideoEntity>
+
+    @Query(
+        """
+        SELECT * FROM youtube_videos
+        ORDER BY published_epoch_ms DESC, last_seen_at DESC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    suspend fun getLatestVideosPaged(limit: Int, offset: Int): List<YouTubeVideoEntity>
+
+    @Query(
+        """
+        SELECT * FROM youtube_videos
+        ORDER BY views_count DESC, published_epoch_ms DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun getTrendingVideos(limit: Int): List<YouTubeVideoEntity>
+
+    @Query(
+        """
+        SELECT * FROM youtube_videos
+        ORDER BY published_epoch_ms DESC, last_seen_at DESC
+        LIMIT :limit
+        """
+    )
+    fun observeLatestVideos(limit: Int = 40): Flow<List<YouTubeVideoEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertVideos(videos: List<YouTubeVideoEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertVideo(video: YouTubeVideoEntity)
+
+    // Sync runs
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSyncRun(run: FeedSyncRunEntity)
+
+    @Query("SELECT * FROM feed_sync_runs ORDER BY started_at DESC LIMIT 1")
+    suspend fun getLatestSyncRun(): FeedSyncRunEntity?
+
+    @Query("SELECT * FROM feed_sync_runs ORDER BY started_at DESC LIMIT 1")
+    fun observeLatestSyncRun(): Flow<FeedSyncRunEntity?>
+
+    @Query("SELECT * FROM feed_sync_runs ORDER BY started_at DESC LIMIT :limit")
+    suspend fun getRecentSyncRuns(limit: Int = 20): List<FeedSyncRunEntity>
+
+    @Query(
+        """
+        DELETE FROM feed_sync_runs
+        WHERE id NOT IN (
+            SELECT id FROM feed_sync_runs ORDER BY started_at DESC LIMIT :maxRuns
+        )
+        """
+    )
+    suspend fun pruneSyncRunsKeepingLatest(maxRuns: Int = 50)
+}
+
 @Database(
     entities = [
+        Track::class,
         TrackEntity::class,
         PlaylistEntity::class,
         PlaybackSnapshotEntity::class,
-        MusicSettingEntity::class
+        MusicSettingEntity::class,
+        YouTubeChannelEntity::class,
+        YouTubeVideoEntity::class,
+        FeedSyncRunEntity::class
     ],
-    version = 4,
+    version = 6,
     exportSchema = false
 )
 abstract class SynapseDatabase : RoomDatabase() {
     abstract fun musicDao(): SynapseMusicDao
+    abstract fun trackDao(): TrackDao
+    abstract fun discoveryDao(): YouTubeDiscoveryDao
 
     companion object {
         @Volatile
@@ -295,7 +656,13 @@ abstract class SynapseDatabase : RoomDatabase() {
     }
 }
 
+/**
+ * Automated test fixtures and licensed live radio / podcast streams.
+ * Note (Section 5): Synthetic demo music tracks are strictly restricted to automated tests
+ * and are never auto-seeded into the production music catalog.
+ */
 object BundledMusicCatalog {
+    @VisibleForTesting
     fun defaultTracks(): List<TrackEntity> {
         val now = System.currentTimeMillis()
         return listOf(
@@ -315,126 +682,27 @@ object BundledMusicCatalog {
                 lastPlayedEpochMs = now - 3_600_000L * 2,
                 lastPositionMs = 94_000L,
                 playCount = 14,
-                accentColorHex = 0xFF0A84FF
-            ),
-            TrackEntity(
-                id = "demo_neon_horizon",
-                title = "Neon Horizon",
-                artist = "Sora Vance",
-                album = "Glass Telemetry",
-                durationMs = 425_000L,
-                artworkUri = "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800&q=80",
-                contentUri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
-                mimeType = "audio/mpeg",
-                isFavorite = true,
-                isLocalFile = false,
-                isDemoTrack = true,
-                addedAtEpochMs = now - 86_400_000L * 5,
-                lastPlayedEpochMs = now - 3_600_000L * 5,
-                lastPositionMs = 0L,
-                playCount = 9,
-                accentColorHex = 0xFF7C5CFF
-            ),
-            TrackEntity(
-                id = "demo_subzero_pulse",
-                title = "Subzero Pulse",
-                artist = "Kinetix Ensemble",
-                album = "Obsidian Architecture",
-                durationMs = 344_000L,
-                artworkUri = "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800&q=80",
-                contentUri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
-                mimeType = "audio/mpeg",
-                isFavorite = false,
-                isLocalFile = false,
-                isDemoTrack = true,
-                addedAtEpochMs = now - 86_400_000L * 4,
-                lastPlayedEpochMs = now - 3_600_000L * 14,
-                lastPositionMs = 0L,
-                playCount = 6,
-                accentColorHex = 0xFFFA2D48
-            ),
-            TrackEntity(
-                id = "demo_velvet_echoes",
-                title = "Velvet Echoes (Unplugged)",
-                artist = "Mira Solis",
-                album = "Nocturne Sessions",
-                durationMs = 302_000L,
-                artworkUri = "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=800&q=80",
-                contentUri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
-                mimeType = "audio/mpeg",
-                isFavorite = true,
-                isLocalFile = false,
-                isDemoTrack = true,
-                addedAtEpochMs = now - 86_400_000L * 3,
-                lastPlayedEpochMs = now - 3_600_000L * 20,
-                lastPositionMs = 0L,
-                playCount = 11,
-                accentColorHex = 0xFF30D158
-            ),
-            TrackEntity(
-                id = "demo_liquid_prism",
-                title = "Liquid Prism",
-                artist = "Aether & Kora",
-                album = "Glass Telemetry",
-                durationMs = 358_000L,
-                artworkUri = "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=800&q=80",
-                contentUri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3",
-                mimeType = "audio/mpeg",
-                isFavorite = false,
-                isLocalFile = false,
-                isDemoTrack = true,
-                addedAtEpochMs = now - 86_400_000L * 2,
-                lastPlayedEpochMs = 0L,
-                lastPositionMs = 0L,
-                playCount = 3,
-                accentColorHex = 0xFF00E5FF
-            ),
-            TrackEntity(
-                id = "demo_solar_drift",
-                title = "Solar Drift",
-                artist = "Nova Modular",
-                album = "Analog Horizons",
-                durationMs = 289_000L,
-                artworkUri = "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=800&q=80",
-                contentUri = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3",
-                mimeType = "audio/mpeg",
-                isFavorite = false,
-                isLocalFile = false,
-                isDemoTrack = true,
-                addedAtEpochMs = now - 86_400_000L,
-                lastPlayedEpochMs = 0L,
-                lastPositionMs = 0L,
-                playCount = 2,
-                accentColorHex = 0xFFFF9F0A
+                accentColorHex = 0xFF0A84FF,
+                sourceType = "local",
+                playbackAvailability = "available"
             )
         )
     }
 
-    fun defaultPlaylists(): List<PlaylistEntity> {
-        val now = System.currentTimeMillis()
-        return listOf(
-            PlaylistEntity(
-                id = "playlist_late_night_oled",
-                name = "Late Night OLED",
-                description = "Deep spatial electronics and ambient glass textures.",
-                trackIdsCsv = "demo_midnight_synapse,demo_neon_horizon,demo_liquid_prism",
-                coverColorHex = 0xFF0A84FF,
-                createdAtEpochMs = now - 86_400_000L * 4,
-                updatedAtEpochMs = now - 3_600_000L
-            ),
-            PlaylistEntity(
-                id = "playlist_focus_flow",
-                name = "Focus Architecture",
-                description = "High-clarity instrumentals for coding and deep work.",
-                trackIdsCsv = "demo_subzero_pulse,demo_velvet_echoes,demo_solar_drift",
-                coverColorHex = 0xFF7C5CFF,
-                createdAtEpochMs = now - 86_400_000L * 2,
-                updatedAtEpochMs = now - 7_200_000L
-            )
-        )
-    }
+    @VisibleForTesting
+    fun defaultPlaylists(): List<PlaylistEntity> = emptyList()
 
     fun defaultRadioStations(): List<RadioStationItem> = listOf(
+        RadioStationItem(
+            id = "vividh-bharati",
+            name = "Vividh Bharati Live",
+            tagline = "Akashvani · All India Radio • Live Hindi Film-Music",
+            genre = "Hindi Live",
+            streamUrl = "https://akashvani.gov.in/radio/live.php",
+            artworkUri = "https://dt89je83l7epy.cloudfront.net/images/vividh-bharati.jpg",
+            bitrateKbps = 128,
+            accentColorHex = 0xFFFA2D48
+        ),
         RadioStationItem(
             id = "beatify_one_global",
             name = "Beatify 1 Global",

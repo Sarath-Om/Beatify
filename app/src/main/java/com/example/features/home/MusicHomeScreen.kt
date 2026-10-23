@@ -513,26 +513,93 @@ fun MusicHomeScreen(
                 }
             }
 
-            // 9. Recommended Local & Bundled Demo Tracks
+            // 9. Library & Streamed Tracks (Real Data Only)
             item {
                 SectionHeaderRow(
-                    title = if (quickQuery.isBlank()) "Recommended Local & Demo Tracks" else "Matching Tracks (${filteredCatalog.size})",
-                    subtitle = "Tap any track to play through AndroidX Media3 ExoPlayer"
+                    title = if (quickQuery.isBlank()) "Your Library & Streamed Tracks" else "Matching Tracks (${filteredCatalog.size})",
+                    subtitle = "Real YouTube Music streams & imported device audio played via Media3 ExoPlayer"
                 )
             }
 
-            items(filteredCatalog, key = { "catalog_${it.id}" }) { track ->
-                TrackListItemRow(
-                    track = track,
-                    isCurrentTrack = playbackState.currentTrack?.id == track.id,
-                    isPlaying = playbackState.isPlaying,
-                    playlists = playlists,
-                    onTrackClick = { onPlayTrackFromList(track, filteredCatalog) },
-                    onToggleFavorite = { onToggleFavorite(track) },
-                    onPlayNext = { onPlayNext(track) },
-                    onAddToQueue = { onAddToQueue(track) },
-                    onAddToPlaylist = { playlistId -> onAddToPlaylist(playlistId, track) }
-                )
+            if (filteredCatalog.isEmpty()) {
+                item {
+                    Surface(
+                        color = MainSurface,
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, SubtleBorderWhite, RoundedCornerShape(20.dp))
+                            .testTag("home_empty_catalog_card")
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(22.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text(
+                                text = if (quickQuery.isBlank()) "No Local or Saved Tracks Yet" else "No matching tracks in your library",
+                                color = LabelPrimary,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Search YouTube Music for real artists, songs, and albums, or import audio files from your device.",
+                                color = SecondaryTextZinc,
+                                fontSize = 13.sp
+                            )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Button(
+                                    onClick = { onNavigateToSearch(quickQuery) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = BeatifyAppleCrimson),
+                                    shape = RoundedCornerShape(14.dp),
+                                    modifier = Modifier.testTag("home_search_ytm_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Search,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Search YouTube Music", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Button(
+                                    onClick = onImportAudioFiles,
+                                    colors = ButtonDefaults.buttonColors(containerColor = ElevatedSurface),
+                                    shape = RoundedCornerShape(14.dp),
+                                    modifier = Modifier.border(1.dp, SubtleBorderWhite, RoundedCornerShape(14.dp))
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.FolderOpen,
+                                        contentDescription = null,
+                                        tint = SystemGreen,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Import Audio", color = LabelPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                items(filteredCatalog, key = { "catalog_${it.id}" }) { track ->
+                    TrackListItemRow(
+                        track = track,
+                        isCurrentTrack = playbackState.currentTrack?.id == track.id,
+                        isPlaying = playbackState.isPlaying,
+                        playlists = playlists,
+                        onTrackClick = { onPlayTrackFromList(track, filteredCatalog) },
+                        onToggleFavorite = { onToggleFavorite(track) },
+                        onPlayNext = { onPlayNext(track) },
+                        onAddToQueue = { onAddToQueue(track) },
+                        onAddToPlaylist = { playlistId -> onAddToPlaylist(playlistId, track) }
+                    )
+                }
             }
         }
     }

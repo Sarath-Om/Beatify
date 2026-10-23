@@ -162,6 +162,63 @@ class BeatifyRepositoryRuleTest : FirestoreEmulatorTestBase() {
         assertEquals(FirebaseFirestoreException.Code.PERMISSION_DENIED, exception?.code)
     }
 
+    @Test
+    fun playlistRepository_crudOperations_syncWithFirestoreAndLocalRoomCache() = runBlocking {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val dbRoom = androidx.room.Room.inMemoryDatabaseBuilder(context, SynapseDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val aliceUid = signInTestUser(ALICE_EMAIL)
+            val playlistRepo = PlaylistRepository(
+                musicDao = dbRoom.musicDao(),
+                db = firestore,
+                auth = auth
+            )
+            val playlistId = "pl_repo_${UUID.randomUUID().toString().replace("-", "")}"
+
+            // 1. Create playlist -> writes to both Room local cache and Firestore
+            val created = withTimeout(DEFAULT_TIMEOUT_MS) {
+                playlistRepo.createPlaylist(
+                    name = "Lossless Studio Selects",
+                    description = "Cached + Cloud Synced",
+                    trackIds = listOf("track_a", "track_b"),
+                    customPlaylistId = playlistId
+                )
+            }.getOrThrow()
+            assertEquals(playlistId, created.id)
+            assertEquals("Lossless Studio Selects", dbRoom.musicDao().getPlaylistById(playlistId)?.name)
+
+            // 2. Update playlist -> increments Firestore revision and updates Room cache
+            val updated = withTimeout(DEFAULT_TIMEOUT_MS) {
+                playlistRepo.updatePlaylist(
+                    playlistId = playlistId,
+                    name = "Lossless Studio Selects v2",
+                    description = "Revision 2",
+                    trackIds = listOf("track_a", "track_b", "track_c")
+                )
+            }.getOrThrow()
+            assertEquals("Lossless Studio Selects v2", updated.name)
+            assertEquals(3, dbRoom.musicDao().getPlaylistById(playlistId)?.trackIds()?.size)
+
+            // 3. Read from remote and verify
+            val remoteFetched = withTimeout(DEFAULT_TIMEOUT_MS) {
+                playlistRepo.getPlaylistById(playlistId, preferRemote = true, ownerUid = aliceUid)
+            }.getOrThrow()
+            assertNotNull(remoteFetched)
+            assertEquals("Lossless Studio Selects v2", remoteFetched?.name)
+
+            // 4. Delete playlist -> removes from both Room local cache and Firestore
+            val deleted = withTimeout(DEFAULT_TIMEOUT_MS) {
+                playlistRepo.deletePlaylist(playlistId)
+            }
+            assertTrue(deleted.isSuccess)
+            assertEquals(null, dbRoom.musicDao().getPlaylistById(playlistId))
+        } finally {
+            dbRoom.close()
+        }
+    }
+
     private companion object {
         const val ALICE_EMAIL = "alice@beatify.in"
         const val BOB_EMAIL = "bob@beatify.in"

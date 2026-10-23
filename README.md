@@ -1,78 +1,56 @@
-# Beatify (`com.beatify.in`) — Premium Android Music, Podcast, Radio & Live Media App
+# Beatify (`com.beatify.in`)
 
-**Beatify** is an Apple Music-inspired, OLED-black Android music, podcast, internet radio, and Live TV application powered by **AndroidX Media3 (`ExoPlayer` + `MediaSessionService`)**, **Room** local-first persistence, **Firebase Authentication + Cloud Firestore** per-user synchronization, and a **Secure OTA Web-Bundle Update Service**.
-
----
-
-## 1. Visual Design & Identity
-
-- **Application Name**: `Beatify`
-- **Android Application ID**: `com.beatify.in`
-- **Design Tokens**:
-  - Background: `#000000` (OLED True Black)
-  - Primary Surface: `#1C1C1E`
-  - Elevated Surface: `#27272A`
-  - Primary Text: `#FFFFFF`
-  - Secondary Text: `#A1A1AA`
-  - Primary Accent: `#FA2D48` (Apple Music Crimson)
-  - Secondary Accent: `#0A84FF` (iOS System Blue)
-  - Highlight: `#7C5CFF` (Spatial Violet)
-  - Typography: Bundled `Plus Jakarta Sans` (`res/font/plus_jakarta_sans.ttf`)
-  - Press-scale interaction: `0.97`
-- **5 Bottom Navigation Destinations**:
-  1. **Home** — Hero spatial mixes, Recently Played, Favorites, Playlists, Podcasts, Radio, and Local Imports
-  2. **Search** — Unified filterable search across Local Library, YouTube Music, Podcasts, and Radio
-  3. **Radio** — Local Regional & International Internet Radio streams, Podcast Shows & Episodes, and a separate Live TV player modal
-  4. **Library** — Songs, Albums, Artists, Playlists, Favorites, Folders, and Podcast Subscriptions
-  5. **Settings** — Playback & Equalizer, Firebase Cloud Sync & Google Sign-In, Connected Providers, Podcast/Radio/Live TV controls, Secure OTA Updates, Privacy, Storage, and About Beatify
+**Beatify** is a production-ready Android music, live radio, and podcast application featuring an Apple Music-inspired OLED dark interface (`#000000`), real YouTube Music InnerTube search, native AndroidX Media3 ExoPlayer + `MediaSessionService` background playback, a Room offline `Track` database, Google Sign-In with Cloud Firestore synchronization, `WebViewClient` request filtering, and secure OTA web-bundle update verification.
 
 ---
 
-## 2. Authoritative AndroidX Media3 Playback Engine
+## 1. Echo Music Technical Audit & GPL-3.0 License Compliance
 
-- **`PlaybackService.kt`**: Foreground `MediaSessionService` owning the single authoritative `ExoPlayer` instance and `MediaSession` with `AudioAttributes.USAGE_MEDIA`, automatic audio focus, and noisy-audio (`ACTION_AUDIO_BECOMING_NOISY`) pause handling.
-- **`MediaSessionController.kt`**: Asynchronous `MediaController.Builder(context, SessionToken(context, ComponentName(context, PlaybackService::class.java))).buildAsync()` connector that synchronizes UI state and commands with `PlaybackService` without creating a second `ExoPlayer`.
-- **`NativeBridge.kt`**: Capacitor/Kotlin bridge exposing `getPlaybackState`, `setQueue`, `play`, `pause`, `seekTo`, `skipNext`, `skipPrevious`, `setRepeatMode`, `setShuffleEnabled`, `addToQueue`, and `removeFromQueue`, plus real-time `playbackStateChanged`, `currentTrackChanged`, `queueChanged`, and `playbackError` events.
+Beatify's YouTube Music search and stream-resolution layer was designed after auditing the open-source **[EchoMusicApp/Echo-Music](https://github.com/EchoMusicApp/Echo-Music)** repository:
+
+- **`innertube/`**: Uses YouTube Music's internal `youtubei/v1/search` and `youtubei/v1/player` endpoints with `WEB_REMIX` (`clientVersion: "1.20240918.01.00"`) and `ANDROID_VR` client contexts. Beatify implements a clean Kotlin adapter (`YouTubeMusicInnerTubeProvider`) behind the `MusicSearchProvider` interface.
+- **`playback/` & `core/`**: Uses a single authoritative `androidx.media3.session.MediaSessionService` (`PlaybackService.kt`) and `ExoPlayer` controller (`MediaSessionController.kt` / `PlaybackManager.kt`).
+- **OTA Updater Note**: Echo Music's upstream `README.md` documents that its built-in OTA updater was removed. Beatify implements an independent, cryptographically verified OTA manifest & bundle verifier (`BeatifyOtaVerifier`) for compatible web assets while enforcing native APK/AAB releases for Kotlin, Media3, or AndroidManifest changes.
+- **License & Attribution**: Echo Music is licensed under the **GNU General Public License v3.0 (GPL-3.0)**. Beatify preserves GPL-3.0 attribution notices in-app (**Settings → About Beatify & Open-Source Notices**) and in repository documentation.
 
 ---
 
-## 3. Firebase Cloud Firestore Sync & Security Rules
+## 2. Architecture Overview
 
-### Per-User Data Model
-All cloud documents are isolated under `users/{uid}` and protected by `signedInAs(uid)` (`request.auth != null && request.auth.uid == uid`):
+- **`YouTubeMusicSearchProvider.kt`**:
+  - Implements `MusicSearchProvider` (`searchTracks`, `searchArtists`, `searchAlbums`, `resolvePlaybackStream`).
+  - Queries live YouTube Music InnerTube (`https://music.youtube.com/youtubei/v1/search`) and cross-resolves verified playable audio streams (`audio/mp4` / `audio/mpeg`).
+  - Never fabricates stream URLs from raw video IDs; tracks without a direct unencrypted stream are marked `PlaybackAvailability.EXTERNAL_ONLY` with an explicit **Open in YouTube Music** action.
+  - Enforces `ProviderProductionGuard` so mock providers can never be used in release builds.
+- **`SynapseDatabase.kt` (Room v5)**:
+  - Includes `@Entity(tableName = "track") data class Track` (`TrackDao`) and `TrackEntity` (`SynapseMusicDao`) for storing local audio metadata and offline playback state (`lastPlaybackPositionMs`, `isPlaying`, `playbackAvailability`).
+- **`AdBlocker.kt` (`ContentBlockingService` & `BeatifyFilteringWebViewClient`)**:
+  - Normalizes HTTP/HTTPS URLs and enforces strict domain-boundary matching (`host == domain || host.endsWith(".$domain")`).
+  - Maintains an explicit allowlist for essential playback, login, and artwork endpoints (`music.youtube.com/youtubei/v1/player`, `googlevideo.com/videoplayback`, `accounts.google.com`, `i.ytimg.com`, `lh3.googleusercontent.com`).
+  - Overrides `WebViewClient.shouldInterceptRequest` to return `204 No Content` for matched ad/telemetry requests while recording diagnostic rule IDs without logging cookies or personal query strings.
+- **`BeatifyFirebaseRepository.kt` & `BeatifyGoogleAuthHelper.kt`**:
+  - Authenticates users via Jetpack `CredentialManager` (`GetSignInWithGoogleOption`) + Firebase Auth and synchronizes `users/{uid}/playlists`, `favorites`, `subscriptions`, `preferences/app`, and `devices`.
 
-```text
-users/{uid}/
-├── playlists/{playlistId}       (name, description?, trackIds[], createdAt, updatedAt, revision)
-├── favorites/{trackId}          (trackId, title?, artist?, artworkUri?, addedAt)
-├── subscriptions/{subId}        (provider: "podcast"|"radio"|"music", resourceId, title?, subscribedAt)
-└── preferences/app              (shuffleEnabled, repeatMode: "off"|"one"|"all", playbackSpeed: 0.5..2.0, crossfadeEnabled, updatedAt)
-```
+---
 
-### Architecture & Modules
-- **Android Native Layer**:
-  - `app/src/main/java/com/example/data/BeatifyFirebaseRepository.kt` — Production Kotlin repository targeting the provisioned named Firestore database (`R.string.firestore_database_id`) and Google Sign-In via Jetpack `CredentialManager` (`GetSignInWithGoogleOption`).
-- **TypeScript / Capacitor Layer**:
-  - `src/services/firebase/firebase.ts`
-  - `src/services/firebase/firestore.types.ts`
-  - `src/services/firebase/firestore.schemas.ts`
-  - `src/services/firebase/firestore.errors.ts`
-  - `src/services/firebase/firestore.service.ts`
-  - `src/features/playlists/playlistSync.ts`
-  - `src/features/favorites/favoritesSync.ts`
-  - `src/features/settings/preferencesSync.ts`
-  - `src/hooks/useFirestoreSync.ts`
+## 3. Build, Test & Release Instructions
 
-### Local-First Offline Behavior & Conflict Resolution
-- Local audio imports, playlists, favorites, radio streams, and podcast episodes work offline via Room without requiring sign-in.
-- When signed in with Google, playlists use optimistic concurrency (`revision` integer increments + `updatedAt` server timestamps) so newer local edits are never overwritten by stale cached snapshots.
-- When switching accounts or signing out, all active `onSnapshot` listeners are immediately detached and user-specific caches are cleared.
-
-### Running Security Rules Tests & Deploying
+### Run Unit & Robolectric Tests
 ```bash
-# 1. Run JavaScript security rules unit tests against the Firestore Emulator
-FIRESTORE_EMULATOR_HOST="127.0.0.1:8085" node --test firestore.test.js
-
-# 2. Run Android Robolectric repository rule tests
-gradle :app:testDebugUnitTest --tests '*Rule*'
+gradle :app:testDebugUnitTest
 ```
+
+### Build Debug APK
+```bash
+gradle :app:assembleDebug
+```
+
+### Build Signed Production Release
+Supply the upload keystore environment variables (`KEYSTORE_PATH`, `STORE_PASSWORD`, `KEY_PASSWORD`) and run:
+```bash
+gradle :app:assembleRelease
+```
+
+### Required Platform & Provider Configuration
+- **Firebase (`app/google-services.json`)**: Provisioned for `com.beatify.in` (`gen-lang-client-0468482411`). Ensure your debug and release signing certificate SHA-1 and SHA-256 fingerprints are registered in the Firebase Console for Google Sign-In (`CredentialManager`).
+- **OTA Updates**: Native code, Media3 dependencies, and Android permissions require a full APK/AAB update. Web-asset OTA bundles must be served over HTTPS with a valid SHA-256 digest and Ed25519 signature matching `com.beatify.in`.

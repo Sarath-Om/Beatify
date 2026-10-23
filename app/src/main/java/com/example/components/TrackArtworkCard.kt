@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -26,6 +28,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -43,6 +47,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,6 +57,8 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.data.PlaylistEntity
 import com.example.data.TrackEntity
+import com.example.services.BeatifyMediaCatalog
+import com.example.ui.theme.BeatifyAppleCrimson
 import com.example.ui.theme.ElevatedSurface
 import com.example.ui.theme.HighlightFavoritePink
 import com.example.ui.theme.LabelPrimary
@@ -131,9 +138,12 @@ fun TrackListItemRow(
     onPlayNext: () -> Unit,
     onAddToQueue: () -> Unit,
     onAddToPlaylist: (String) -> Unit,
+    onOpenExternal: ((TrackEntity) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     var menuExpanded by remember { mutableStateOf(false) }
+    val isExternalOnly = track.playbackAvailability == "external-only"
 
     Surface(
         color = if (isCurrentTrack) ElevatedSurface else MainSurface,
@@ -146,7 +156,18 @@ fun TrackListItemRow(
                 shape = RoundedCornerShape(16.dp)
             )
             .clip(RoundedCornerShape(16.dp))
-            .clickable { onTrackClick() }
+            .clickable {
+                if (isExternalOnly) {
+                    if (onOpenExternal != null) {
+                        onOpenExternal(track)
+                    } else {
+                        val url = track.externalLaunchUri ?: track.contentUri
+                        BeatifyMediaCatalog.openYouTubeMusicOfficial(context, url)
+                    }
+                } else {
+                    onTrackClick()
+                }
+            }
             .testTag("track_row_${track.id}")
     ) {
         Row(
@@ -182,7 +203,12 @@ fun TrackListItemRow(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false)
                     )
-                    SourceBadgePill(isLocal = track.isLocalFile, isAvailable = track.isAvailable)
+                    SourceBadgePill(
+                        isLocal = track.isLocalFile || track.sourceType == "local",
+                        isAvailable = track.isAvailable,
+                        sourceType = track.sourceType,
+                        playbackAvailability = track.playbackAvailability
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(3.dp))
@@ -194,14 +220,49 @@ fun TrackListItemRow(
                             append(" • ")
                             append(it)
                         }
-                        append(" • ")
-                        append(formatDurationMillis(track.durationMs))
+                        if (track.durationMs > 0L) {
+                            append(" • ")
+                            append(formatDurationMillis(track.durationMs))
+                        }
                     },
                     color = SecondaryTextZinc,
                     fontSize = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+
+            if (isExternalOnly) {
+                Button(
+                    onClick = {
+                        if (onOpenExternal != null) {
+                            onOpenExternal(track)
+                        } else {
+                            val url = track.externalLaunchUri ?: track.contentUri
+                            BeatifyMediaCatalog.openYouTubeMusicOfficial(context, url)
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = BeatifyAppleCrimson.copy(alpha = 0.22f)),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                    modifier = Modifier
+                        .padding(end = 4.dp)
+                        .testTag("external_play_btn_${track.id}")
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                        contentDescription = "Open in YouTube Music",
+                        tint = BeatifyAppleCrimson,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "YT Music",
+                        color = LabelPrimary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             IconButton(
@@ -237,36 +298,50 @@ fun TrackListItemRow(
                     onDismissRequest = { menuExpanded = false },
                     modifier = Modifier.background(ElevatedSurface)
                 ) {
-                    DropdownMenuItem(
-                        text = { Text("Play Now", color = LabelPrimary) },
-                        leadingIcon = {
-                            Icon(Icons.Default.PlayArrow, contentDescription = null, tint = SystemBlue)
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onTrackClick()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Play Next", color = LabelPrimary) },
-                        leadingIcon = {
-                            Icon(Icons.Default.SkipNext, contentDescription = null, tint = SecondaryViolet)
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onPlayNext()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Add to Queue", color = LabelPrimary) },
-                        leadingIcon = {
-                            Icon(Icons.Default.QueueMusic, contentDescription = null, tint = SystemGreen)
-                        },
-                        onClick = {
-                            menuExpanded = false
-                            onAddToQueue()
-                        }
-                    )
+                    if (isExternalOnly) {
+                        DropdownMenuItem(
+                            text = { Text("Open in YouTube Music", color = LabelPrimary) },
+                            leadingIcon = {
+                                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, tint = BeatifyAppleCrimson)
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                val url = track.externalLaunchUri ?: track.contentUri
+                                BeatifyMediaCatalog.openYouTubeMusicOfficial(context, url)
+                            }
+                        )
+                    } else {
+                        DropdownMenuItem(
+                            text = { Text("Play Now", color = LabelPrimary) },
+                            leadingIcon = {
+                                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = SystemBlue)
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onTrackClick()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Play Next", color = LabelPrimary) },
+                            leadingIcon = {
+                                Icon(Icons.Default.SkipNext, contentDescription = null, tint = SecondaryViolet)
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onPlayNext()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Add to Queue", color = LabelPrimary) },
+                            leadingIcon = {
+                                Icon(Icons.Default.QueueMusic, contentDescription = null, tint = SystemGreen)
+                            },
+                            onClick = {
+                                menuExpanded = false
+                                onAddToQueue()
+                            }
+                        )
+                    }
                     playlists.forEach { playlist ->
                         DropdownMenuItem(
                             text = { Text("Add to ${playlist.name}", color = LabelPrimary) },
@@ -288,17 +363,21 @@ fun TrackListItemRow(
 @Composable
 fun SourceBadgePill(
     isLocal: Boolean,
-    isAvailable: Boolean = true
+    isAvailable: Boolean = true,
+    sourceType: String = if (isLocal) "local" else "youtube-music",
+    playbackAvailability: String = if (isAvailable) "available" else "unavailable"
 ) {
     val badgeColor = when {
-        !isAvailable -> HighlightFavoritePink
-        isLocal -> SystemGreen
-        else -> SecondaryViolet
+        playbackAvailability == "external-only" -> BeatifyAppleCrimson
+        !isAvailable || playbackAvailability == "unavailable" -> HighlightFavoritePink
+        isLocal || sourceType == "local" -> SystemGreen
+        else -> SystemBlue
     }
     val label = when {
-        !isAvailable -> "Unavailable"
-        isLocal -> "Local"
-        else -> "Demo"
+        playbackAvailability == "external-only" -> "YT Music Ext"
+        !isAvailable || playbackAvailability == "unavailable" -> "Unavailable"
+        isLocal || sourceType == "local" -> "Local"
+        else -> "YouTube Music"
     }
     Box(
         modifier = Modifier

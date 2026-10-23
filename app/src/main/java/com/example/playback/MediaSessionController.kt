@@ -146,7 +146,7 @@ class MediaSessionController(
         try {
             val sessionToken = SessionToken(
                 appContext,
-                ComponentName(appContext, PlaybackService::class.java)
+                ComponentName(appContext, MediaPlaybackService::class.java)
             )
             val future = MediaController.Builder(appContext, sessionToken)
                 .setListener(object : MediaController.Listener {
@@ -184,7 +184,7 @@ class MediaSessionController(
 
     private fun ensureServiceStarted() {
         try {
-            val intent = Intent(appContext, PlaybackService::class.java)
+            val intent = Intent(appContext, MediaPlaybackService::class.java)
             appContext.startService(intent)
         } catch (_: Exception) {
         }
