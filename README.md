@@ -6,7 +6,7 @@
 
 ## 1. Echo Music Technical Audit & GPL-3.0 License Compliance
 
-Beatify's YouTube Music search and stream-resolution layer was designed after auditing the open-source **[EchoMusicApp/Echo-Music](https://github.com/EchoMusicApp/Echo-Music)** repository:
+Beatify's YouTube Music search and stream-resolution layer was designed after auditing the open-source this repository:
 
 - **`innertube/`**: Uses YouTube Music's internal `youtubei/v1/search` and `youtubei/v1/player` endpoints with `WEB_REMIX` (`clientVersion: "1.20240918.01.00"`) and `ANDROID_VR` client contexts. Beatify implements a clean Kotlin adapter (`YouTubeMusicInnerTubeProvider`) behind the `MusicSearchProvider` interface.
 - **`playback/` & `core/`**: Uses a single authoritative `androidx.media3.session.MediaSessionService` (`PlaybackService.kt`) and `ExoPlayer` controller (`MediaSessionController.kt` / `PlaybackManager.kt`).
