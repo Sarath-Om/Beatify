@@ -9,6 +9,7 @@ import com.example.data.PlaybackSnapshotEntity
 import com.example.data.RepeatMode
 import com.example.data.SynapseDatabase
 import com.example.data.Track
+import com.example.playback.MediaPlaybackService
 import com.example.services.BeatifyOtaVerifier
 import com.example.services.ContentBlockingService
 import com.example.services.MusicAlbumSearchResult
@@ -19,6 +20,7 @@ import com.example.services.PlaybackAvailability
 import com.example.services.ProviderProductionGuard
 import com.example.services.ResolvedPlaybackStream
 import com.example.services.YouTubeMusicInnerTubeProvider
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.After
@@ -30,6 +32,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
@@ -505,5 +508,187 @@ class ExampleRobolectricTest {
         )
         assertTrue(rssOutput.contains("<title>Sarath Music &amp; Radio</title>"))
         assertTrue(rssOutput.contains("Blinding Lights — The Weeknd"))
+
+        // 5. Verify Room offline cache for music-radio feed and Media3 ExoPlayer playable TrackEntity conversion
+        val musicRadioService = com.example.services.MusicRadioRssService(discoveryDao = discoveryDao)
+        val initialCachedFeed = musicRadioService.getCachedOrSeededFeed()
+        assertTrue(initialCachedFeed.entries.isNotEmpty())
+        assertTrue(initialCachedFeed.entries.any { it.type == "radio" && it.title == "Vividh Bharati Live" })
+        assertTrue(initialCachedFeed.entries.any { it.type == "song" })
+
+        val cachedRoomRows = discoveryDao.getMusicRadioEntriesOnce(com.example.services.MusicRadioRssService.DEFAULT_PLAYLIST)
+        assertTrue(cachedRoomRows.isNotEmpty())
+
+        val vividhEntry = initialCachedFeed.entries.first { it.type == "radio" }
+        val vividhTrack = vividhEntry.toTrackEntity()
+        assertTrue(vividhTrack.contentUri.startsWith("http"))
+        assertTrue(vividhTrack.isAvailable)
+
+        val songEntry = initialCachedFeed.entries.first { it.type == "song" }
+        val songTrack = songEntry.toTrackEntity()
+        assertTrue(songTrack.contentUri.startsWith("http"))
+        assertTrue(songTrack.isAvailable)
+
+        // 6. Verify MusicEntry Room entity, MusicEntryDao, MusicRadioRepository, and bound MediaPlaybackService
+        val musicEntryDao = database.musicEntryDao()
+        val repository = com.example.data.MusicRadioRepository(
+            musicEntryDao = musicEntryDao,
+            discoveryDao = discoveryDao,
+            rssService = musicRadioService
+        )
+        val seededEntries = repository.ensureSeeded()
+        assertTrue(seededEntries.isNotEmpty())
+        val observedFromRoom = repository.musicEntries.first()
+        assertEquals(seededEntries.size, observedFromRoom.size)
+        assertEquals("radio", observedFromRoom.first().type)
+        assertEquals("Vividh Bharati Live", observedFromRoom.first().title)
+
+        // Verify syncing from music-radio JSON structure updates Room and emits to UI Flow
+        val sampleJson = com.example.services.MusicRadioRssService.toJson(
+            playlist = com.example.services.MusicRadioRssService.DEFAULT_PLAYLIST,
+            entries = listOf(vividhEntry) + playlistEntries,
+            warnings = emptyList()
+        )
+        val syncedFromJson = repository.syncFromJson(sampleJson)
+        assertEquals(2, syncedFromJson.size)
+        val roomAfterSync = repository.musicEntries.first()
+        assertEquals(2, roomAfterSync.size)
+        assertEquals("vividh-bharati", roomAfterSync[0].id)
+        assertEquals("4NRXx6U8ABQ", roomAfterSync[1].id)
+
+        // Verify UI binding to MediaPlaybackService controls ExoPlayer and MediaSession play/pause state
+        val serviceController = Robolectric.buildService(MediaPlaybackService::class.java).create()
+        val service = serviceController.get()
+        val bindIntent = android.content.Intent(context, MediaPlaybackService::class.java).apply {
+            action = MediaPlaybackService.ACTION_BIND_LOCAL
+        }
+        val binder = service.onBind(bindIntent) as MediaPlaybackService.LocalBinder
+        val boundService = binder.service
+        assertNotNull(boundService.exoPlayer)
+        assertNotNull(boundService.mediaSession)
+
+        boundService.playMusicEntry(roomAfterSync[0])
+        assertEquals("radio_vividh-bharati", boundService.activeStreamId.value)
+        assertTrue(boundService.exoPlayer.playWhenReady)
+
+        // Verify playback progress tracking and seeking via MediaPlaybackService
+        boundService.seekTo(45_000L)
+        assertEquals(45_000L, boundService.playbackPositionMs.value)
+
+        // Verify synchronized 16-band equalizer spectrum telemetry & preset updates
+        val playingBands = boundService.equalizerBandLevels.value
+        assertEquals(16, playingBands.size)
+        assertTrue(playingBands.all { it in 0.05f..1.0f })
+        boundService.setEqualizerPreset("Bass Boost")
+        assertEquals("Bass Boost", boundService.activeEqualizerPreset.value)
+        val bassBoostBands = boundService.equalizerBandLevels.value
+        assertEquals(16, bassBoostBands.size)
+
+        // Verify Playback Speed Control (0.5x, 1.0x, 1.5x, 2.0x) using ExoPlayer's setPlaybackParameters
+        listOf(0.5f, 1.0f, 1.5f, 2.0f).forEach { targetSpeed ->
+            boundService.setPlaybackSpeed(targetSpeed)
+            assertEquals(targetSpeed, boundService.playbackSpeed.value, 0.001f)
+            assertEquals(targetSpeed, boundService.exoPlayer.playbackParameters.speed, 0.001f)
+        }
+        // Cycling from 2.0x wraps back to 0.5x -> 1.0x
+        assertEquals(0.5f, boundService.cyclePlaybackSpeed(), 0.001f)
+        assertEquals(1.0f, boundService.cyclePlaybackSpeed(), 0.001f)
+
+        // Verify Configurable Crossfade Duration & Equal-Power Volume Curves in MediaPlaybackService
+        boundService.setCrossfadeDurationSeconds(6)
+        assertEquals(6, boundService.crossfadeDurationSec.value)
+        val (startOut, startIn) = MediaPlaybackService.calculateCrossfadeVolumes(0f, 1.0f)
+        assertEquals(1.0f, startOut, 0.01f)
+        assertEquals(0.0f, startIn, 0.01f)
+        val (midOut, midIn) = MediaPlaybackService.calculateCrossfadeVolumes(0.5f, 1.0f)
+        assertTrue(midOut in 0.65f..0.75f)
+        assertTrue(midIn in 0.65f..0.75f)
+        val (endOut, endIn) = MediaPlaybackService.calculateCrossfadeVolumes(1f, 1.0f)
+        assertEquals(0.0f, endOut, 0.01f)
+        assertEquals(1.0f, endIn, 0.01f)
+
+        boundService.crossfadeToNextTrack()
+        boundService.setCrossfadeDurationSeconds(0)
+        assertEquals(0, boundService.crossfadeDurationSec.value)
+        assertFalse(boundService.isCrossfading.value)
+
+        boundService.pause()
+        assertFalse(boundService.exoPlayer.playWhenReady)
+
+        boundService.play()
+        assertTrue(boundService.exoPlayer.playWhenReady)
+
+        // 7. Verify MusicEntry.favorite boolean field persistence & toggleFavorite in Room
+        assertFalse(roomAfterSync[1].favorite)
+        val toggledFav = repository.toggleFavorite("4NRXx6U8ABQ")
+        assertTrue(toggledFav)
+        val favEntries = repository.favoriteEntries.first()
+        assertEquals(1, favEntries.size)
+        assertEquals("4NRXx6U8ABQ", favEntries.first().id)
+        assertTrue(favEntries.first().favorite)
+
+        // Verify re-syncing JSON preserves existing favorite flags in Room
+        repository.syncFromJson(sampleJson)
+        val favEntriesAfterResync = repository.favoriteEntries.first()
+        assertEquals(1, favEntriesAfterResync.size)
+        assertTrue(favEntriesAfterResync.first().favorite)
+
+        val untoggledFav = repository.toggleFavorite("4NRXx6U8ABQ")
+        assertFalse(untoggledFav)
+        assertTrue(repository.favoriteEntries.first().isEmpty())
+
+        // 8. Verify SyncedLyricsService LRC parsing, timestamp synchronization, and intra-line progress
+        val lyricsService = com.example.services.SyncedLyricsService()
+        val blindingLightsTrack = roomAfterSync[1].toTrackEntity()
+        val loadedLyrics = lyricsService.loadLyricsForTrack(blindingLightsTrack)
+        assertEquals(blindingLightsTrack.id, loadedLyrics.trackId)
+        assertTrue(loadedLyrics.isTimeSynced)
+        assertTrue(loadedLyrics.lines.size >= 10)
+        assertEquals(loadedLyrics, lyricsService.currentLyrics.value)
+
+        // At 0ms: intro instrumental line is active
+        val syncAtStart = lyricsService.synchronizeAt(loadedLyrics, 0L)
+        assertEquals(0, syncAtStart.activeLineIndex)
+        assertTrue(syncAtStart.activeLine?.isInstrumental == true)
+        assertEquals("Yeah, I've been tryna call", syncAtStart.upcomingLine?.text)
+
+        // At 15_000ms (00:15.00): "Yeah, I've been tryna call" ([00:13.50]..[00:18.00]) is active
+        val syncAtVerse = lyricsService.synchronizeAt(loadedLyrics, 15_750L)
+        assertEquals(1, syncAtVerse.activeLineIndex)
+        assertEquals("Yeah, I've been tryna call", syncAtVerse.activeLine?.text)
+        assertEquals("I've been on my own for long enough", syncAtVerse.upcomingLine?.text)
+        assertEquals(0.5f, syncAtVerse.activeLineProgress, 0.05f)
+
+        // At 56_000ms (00:56.00): "I said, ooh, I'm blinded by the lights" ([00:55.00]..[01:00.40]) is active
+        val syncAtChorus = lyricsService.synchronizeAt(loadedLyrics, 56_000L)
+        assertEquals("I said, ooh, I'm blinded by the lights", syncAtChorus.activeLine?.text)
+        assertTrue(syncAtChorus.activeLineProgress in 0.1f..0.3f)
+
+        // 9. Verify Persistent Mini-Player state and transport controls (Previous, Play/Pause, Next, Seek)
+        val contentBlocking = com.example.services.ContentBlockingService()
+        val playbackManager = com.example.playback.PlaybackManager(
+            context = context,
+            contentBlockingService = contentBlocking
+        )
+        val queueTracks = roomAfterSync.map { it.toTrackEntity() }
+        playbackManager.setQueue(queueTracks, 0)
+        assertNotNull(playbackManager.playbackState.value.currentTrack)
+        assertEquals("radio_vividh-bharati", playbackManager.playbackState.value.currentTrack?.id)
+        assertEquals("Vividh Bharati Live", playbackManager.playbackState.value.currentTrack?.title)
+
+        // Verify mini-player next/previous transport controls
+        playbackManager.skipNext()
+        assertEquals("ytm_4NRXx6U8ABQ", playbackManager.playbackState.value.currentTrack?.id)
+        assertEquals("Blinding Lights", playbackManager.playbackState.value.currentTrack?.title)
+
+        playbackManager.skipPrevious()
+        assertEquals("radio_vividh-bharati", playbackManager.playbackState.value.currentTrack?.id)
+        playbackManager.release()
+
+        serviceController.destroy()
+        Unit
     }
 }
+
+
+

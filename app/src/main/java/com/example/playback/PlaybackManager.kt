@@ -98,8 +98,20 @@ class PlaybackManager(
         mediaSessionController.setPlaybackSpeed(speed)
     }
 
+    fun cyclePlaybackSpeed(): Float {
+        return mediaSessionController.cyclePlaybackSpeed()
+    }
+
     fun setVolume(volume: Float) {
         mediaSessionController.setVolume(volume)
+    }
+
+    fun setCrossfadeDurationSeconds(seconds: Int) {
+        mediaSessionController.setCrossfadeDurationSeconds(seconds)
+    }
+
+    fun setEqualizerPreset(presetName: String) {
+        mediaSessionController.setEqualizerPreset(presetName)
     }
 
     fun setSleepTimerMinutes(minutes: Int?) {

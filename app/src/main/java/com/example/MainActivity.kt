@@ -63,6 +63,7 @@ import com.example.features.library.MusicLibraryScreen
 import com.example.features.radio.MusicRadioScreen
 import com.example.features.search.MusicSearchScreen
 import com.example.features.settings.MusicSettingsScreen
+import com.example.services.LocalMediaStoreScanner
 import com.example.ui.theme.BeatifyAppleCrimson
 import com.example.ui.theme.HighlightFavoritePink
 import com.example.ui.theme.LabelPrimary
@@ -158,6 +159,12 @@ fun SynapseMusicApp(viewModel: SynapseViewModel) {
     val isSyncingRssFeeds by viewModel.isSyncingRssFeeds.collectAsStateWithLifecycle()
     val musicRadioFeed by viewModel.musicRadioFeed.collectAsStateWithLifecycle()
     val isLoadingMusicRadioFeed by viewModel.isLoadingMusicRadioFeed.collectAsStateWithLifecycle()
+    val cachedMusicEntries by viewModel.cachedMusicEntries.collectAsStateWithLifecycle()
+    val favoriteMusicEntries by viewModel.favoriteMusicEntries.collectAsStateWithLifecycle()
+    val youTubeAccountConnected by viewModel.youTubeAccountConnected.collectAsStateWithLifecycle()
+    val youTubeConnectedChannelLabel by viewModel.youTubeConnectedChannelLabel.collectAsStateWithLifecycle()
+    val currentLyrics by viewModel.currentLyrics.collectAsStateWithLifecycle()
+    val isLoadingLyrics by viewModel.isLoadingLyrics.collectAsStateWithLifecycle()
 
     var notificationPermissionGranted by remember {
         mutableStateOf(
@@ -176,6 +183,28 @@ fun SynapseMusicApp(viewModel: SynapseViewModel) {
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         notificationPermissionGranted = granted
+    }
+
+    var audioPermissionGranted by remember {
+        mutableStateOf(LocalMediaStoreScanner.hasAudioPermission(context))
+    }
+
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        audioPermissionGranted = granted
+        if (granted) {
+            viewModel.scanDeviceMediaStoreAudio()
+        }
+    }
+
+    val requestOrRunMediaStoreScan = {
+        if (LocalMediaStoreScanner.hasAudioPermission(context)) {
+            audioPermissionGranted = true
+            viewModel.scanDeviceMediaStoreAudio()
+        } else {
+            audioPermissionLauncher.launch(LocalMediaStoreScanner.requiredAudioPermission())
+        }
     }
 
     // System Document Picker supporting MP3, M4A/AAC, FLAC, WAV, OGG, and Opus
@@ -230,8 +259,12 @@ fun SynapseMusicApp(viewModel: SynapseViewModel) {
                     onSelectDestination = { viewModel.selectDestination(it) },
                     onOpenNowPlaying = { viewModel.openNowPlaying() },
                     onPlayPauseToggle = { viewModel.togglePlayPause() },
+                    onSkipPrevious = { viewModel.skipPrevious() },
                     onSkipNext = { viewModel.skipNext() },
-                    onToggleFavorite = { viewModel.toggleCurrentTrackFavorite() }
+                    onToggleFavorite = { viewModel.toggleCurrentTrackFavorite() },
+                    onSeekTo = { positionMs -> viewModel.seekTo(positionMs) },
+                    isNowPlayingExpanded = isNowPlayingExpanded,
+                    lyricsPayload = currentLyrics
                 )
             }
         ) { innerPadding ->
@@ -251,6 +284,13 @@ fun SynapseMusicApp(viewModel: SynapseViewModel) {
                             playlists = playlists,
                             playbackState = playbackState,
                             currentUserUid = currentUserUid,
+                            musicRadioFeed = musicRadioFeed,
+                            onPlayMusicRadioEntry = { entry ->
+                                viewModel.playMusicRadioEntry(entry)
+                            },
+                            onToggleMusicRadioEntryFavorite = { entry ->
+                                viewModel.toggleMusicRadioEntryFavorite(entry)
+                            },
                             onPlayTrackFromList = { track, list ->
                                 viewModel.playTrackFromList(track, list)
                             },
@@ -298,12 +338,15 @@ fun SynapseMusicApp(viewModel: SynapseViewModel) {
                             totalCatalogChannels = totalCatalogChannels,
                             totalSyncedVideos = totalSyncedVideos,
                             isSyncingRssFeeds = isSyncingRssFeeds,
+                            musicEntries = cachedMusicEntries,
                             onSearchQueryChange = { viewModel.onSearchQueryChanged(it) },
                             onSearchFocusChange = { viewModel.onSearchFocusChanged(it) },
                             onRetryRemoteSearch = { viewModel.retryRemoteSearch() },
                             onTriggerRssFeedSync = { viewModel.triggerRssFeedSync() },
                             onSelectChannel = { viewModel.selectDiscoveryChannel(it) },
                             onPlayRssVideo = { viewModel.playRssVideo(it) },
+                            onPlayMusicEntry = { viewModel.playMusicEntry(it) },
+                            onToggleMusicEntryFavorite = { viewModel.toggleMusicEntryFavorite(it.id) },
                             onChangeSortOption = { viewModel.setSortOption(it) },
                             onPlayTrackFromList = { track, list ->
                                 viewModel.playTrackFromList(track, list)
@@ -340,6 +383,9 @@ fun SynapseMusicApp(viewModel: SynapseViewModel) {
                             },
                             onPlayMusicRadioEntry = { entry ->
                                 viewModel.playMusicRadioEntry(entry)
+                            },
+                            onToggleMusicRadioEntryFavorite = { entry ->
+                                viewModel.toggleMusicRadioEntryFavorite(entry)
                             }
                         )
                     }
@@ -348,6 +394,7 @@ fun SynapseMusicApp(viewModel: SynapseViewModel) {
                         MusicLibraryScreen(
                             allTracks = allTracks,
                             favoriteTracks = favoriteTracks,
+                            favoriteMusicEntries = favoriteMusicEntries,
                             recentlyPlayed = recentlyPlayed,
                             albums = albums,
                             artists = artists,
@@ -357,10 +404,16 @@ fun SynapseMusicApp(viewModel: SynapseViewModel) {
                             onSelectCategory = { viewModel.selectLibraryCategory(it) },
                             sortOption = sortOption,
                             onChangeSortOption = { viewModel.setSortOption(it) },
+                            audioPermissionGranted = audioPermissionGranted,
+                            youTubeAccountConnected = youTubeAccountConnected,
                             onImportAudioFiles = launchAudioPicker,
+                            onScanLocalMediaStore = requestOrRunMediaStoreScan,
+                            onConnectYouTubeLibrary = { viewModel.connectAndSyncYouTubeLibrary() },
                             onPlayTrackFromList = { track, list ->
                                 viewModel.playTrackFromList(track, list)
                             },
+                            onPlayMusicEntry = { viewModel.playMusicEntry(it) },
+                            onToggleMusicEntryFavorite = { viewModel.toggleMusicEntryFavorite(it.id) },
                             onPlayAlbum = { viewModel.playAlbum(it) },
                             onPlayArtist = { viewModel.playArtist(it) },
                             onPlayPlaylist = { viewModel.playPlaylist(it) },
@@ -393,8 +446,12 @@ fun SynapseMusicApp(viewModel: SynapseViewModel) {
                             notificationCategories = notificationCategories,
                             marketingOptIn = marketingOptIn,
                             pushNotifications = pushNotifications,
+                            youTubeAccountConnected = youTubeAccountConnected,
+                            youTubeConnectedChannelLabel = youTubeConnectedChannelLabel,
                             onOpenAuthSheet = { viewModel.openAuthSheet() },
                             onTriggerCloudSync = { viewModel.syncLocalDataToCloudNow() },
+                            onConnectYouTubeAccount = { viewModel.connectAndSyncYouTubeLibrary() },
+                            onDisconnectYouTubeAccount = { viewModel.disconnectYouTubeAccount() },
                             onCheckOtaUpdate = { viewModel.checkForOtaUpdate() },
                             onSwitchOtaChannel = { viewModel.switchOtaChannel(it) },
                             onRollbackOtaBundle = { viewModel.rollbackOtaBundle() },
@@ -404,10 +461,11 @@ fun SynapseMusicApp(viewModel: SynapseViewModel) {
                             onNavigateDeepLink = { viewModel.handleDeepLinkUri(it) },
                             onSelectAudioQuality = { viewModel.setAudioQuality(it) },
                             onToggleGaplessPlayback = { viewModel.setGaplessPlayback(it) },
+                            onSetCrossfadeDurationSeconds = { viewModel.setCrossfadeDurationSeconds(it) },
                             onSetSleepTimerMinutes = { viewModel.setSleepTimerMinutes(it) },
                             onRequestNotificationPermission = {
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                     notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                                 }
                             },
                             onRescanLibrary = { viewModel.rescanLibraryAndVerifyAvailability() },
@@ -547,6 +605,20 @@ fun SynapseMusicApp(viewModel: SynapseViewModel) {
                 },
                 onClearUpcomingQueue = {
                     viewModel.clearUpcomingQueue()
+                },
+                onSelectEqualizerPreset = { presetName ->
+                    viewModel.setEqualizerPreset(presetName)
+                },
+                onCyclePlaybackSpeed = {
+                    viewModel.cyclePlaybackSpeed()
+                },
+                onCrossfadeDurationChange = { seconds ->
+                    viewModel.setCrossfadeDurationSeconds(seconds)
+                },
+                lyricsPayload = currentLyrics,
+                isLoadingLyrics = isLoadingLyrics,
+                onRefreshLyrics = {
+                    viewModel.refreshCurrentTrackLyrics()
                 }
             )
         }

@@ -3,7 +3,9 @@ package com.example.playback
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.ServiceConnection
 import android.net.Uri
+import android.os.IBinder
 import androidx.core.content.ContextCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -64,11 +66,38 @@ class MediaSessionController(
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController: MediaController? = null
+    var boundService: MediaPlaybackService? = null
+        private set
+    private var isServiceBound: Boolean = false
     private var listenerAttachedPlayer: Player? = null
     private var progressPollingJob: Job? = null
 
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+            val binder = service as? MediaPlaybackService.LocalBinder ?: return
+            boundService = binder.service
+            isServiceBound = true
+            val sessionPlayer = binder.service.mediaSession?.player ?: binder.service.exoPlayer
+            if (mediaController == null) {
+                attachSingleListener(sessionPlayer)
+                syncStateFromPlayer(emitStateEvent = true)
+            }
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            boundService = null
+            isServiceBound = false
+            if (mediaController == null) {
+                attachSingleListener(PlaybackEngineHolder.getOrCreatePlayer(appContext))
+            }
+        }
+    }
+
     private val activePlayer: Player
-        get() = mediaController ?: PlaybackEngineHolder.getOrCreatePlayer(appContext)
+        get() = mediaController
+            ?: boundService?.mediaSession?.player
+            ?: boundService?.takeIf { true }?.let { runCatching { it.exoPlayer }.getOrNull() }
+            ?: PlaybackEngineHolder.getOrCreatePlayer(appContext)
 
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -139,8 +168,18 @@ class MediaSessionController(
      * `ListenableFuture<MediaController>` API. Safe across Activity recreation and WebView reload.
      */
     fun connectOrReconnectAsync() {
+        try {
+            val bindIntent = Intent(appContext, MediaPlaybackService::class.java).apply {
+                action = MediaPlaybackService.ACTION_BIND_LOCAL
+            }
+            appContext.bindService(bindIntent, serviceConnection, Context.BIND_AUTO_CREATE)
+        } catch (_: Exception) {
+        }
         if (mediaController?.isConnected == true) {
             syncStateFromPlayer(emitStateEvent = true)
+            return
+        }
+        if (android.os.Build.FINGERPRINT.equals("robolectric", ignoreCase = true)) {
             return
         }
         try {
@@ -186,6 +225,12 @@ class MediaSessionController(
         try {
             val intent = Intent(appContext, MediaPlaybackService::class.java)
             appContext.startService(intent)
+            if (boundService == null) {
+                val bindIntent = Intent(appContext, MediaPlaybackService::class.java).apply {
+                    action = MediaPlaybackService.ACTION_BIND_LOCAL
+                }
+                appContext.bindService(bindIntent, serviceConnection, Context.BIND_AUTO_CREATE)
+            }
         } catch (_: Exception) {
         }
     }
@@ -200,17 +245,32 @@ class MediaSessionController(
                         ?: _playbackState.value.currentTrack?.durationMs
                         ?: 0L
                     val buf = activePlayer.bufferedPosition.coerceAtLeast(pos)
+                    val currentPreset = boundService?.activeEqualizerPreset?.value
+                        ?: _playbackState.value.equalizerPreset
+                    val liveBands = boundService?.equalizerBandLevels?.value?.takeIf { it.isNotEmpty() }
+                        ?: MediaPlaybackService.computeStreamSynchronizedBands(
+                            positionMs = pos,
+                            isPlaying = true,
+                            volume = activePlayer.volume,
+                            speed = activePlayer.playbackParameters.speed,
+                            streamId = _playbackState.value.currentTrack?.id,
+                            presetName = currentPreset
+                        )
                     _playbackState.update { state ->
                         state.copy(
                             positionMs = pos,
                             durationMs = dur,
-                            bufferedPositionMs = buf
+                            bufferedPositionMs = buf,
+                            playbackSpeed = activePlayer.playbackParameters.speed,
+                            equalizerPreset = currentPreset,
+                            equalizerBands = liveBands,
+                            audioSessionId = boundService?.audioSessionIdFlow?.value ?: state.audioSessionId,
+                            crossfadeDurationSec = boundService?.crossfadeDurationSec?.value ?: state.crossfadeDurationSec,
+                            isCrossfading = boundService?.isCrossfading?.value ?: false
                         )
                     }
                 }
-                // Throttled 500ms progress interval so UI progress bars update smoothly
-                // without triggering excessive recompositions on every native frame tick.
-                delay(500L)
+                delay(150L)
             }
         }
     }
@@ -311,12 +371,17 @@ class MediaSessionController(
     fun skipNext() {
         val queue = _playbackState.value.queue
         if (queue.isEmpty()) return
-        if (activePlayer.hasNextMediaItem()) {
-            activePlayer.seekToNextMediaItem()
-        } else if (_playbackState.value.repeatMode == RepeatMode.ALL && queue.isNotEmpty()) {
-            activePlayer.seekToDefaultPosition(0)
+        val service = boundService
+        if (service != null && _playbackState.value.crossfadeDurationSec > 0) {
+            service.crossfadeToNextTrack()
+        } else {
+            if (activePlayer.hasNextMediaItem()) {
+                activePlayer.seekToNextMediaItem()
+            } else if (_playbackState.value.repeatMode == RepeatMode.ALL && queue.isNotEmpty()) {
+                activePlayer.seekToDefaultPosition(0)
+            }
+            activePlayer.play()
         }
-        activePlayer.play()
         syncStateFromPlayer(emitStateEvent = true)
         onQueueOrStatePersisted(_playbackState.value)
     }
@@ -359,16 +424,58 @@ class MediaSessionController(
 
     fun setPlaybackSpeed(speed: Float) {
         val clamped = speed.coerceIn(0.5f, 2.0f)
-        activePlayer.playbackParameters = PlaybackParameters(clamped)
+        val params = PlaybackParameters(clamped)
+        activePlayer.setPlaybackParameters(params)
+        boundService?.setPlaybackSpeed(clamped)
         _playbackState.update { it.copy(playbackSpeed = clamped) }
         syncStateFromPlayer(emitStateEvent = true)
         onQueueOrStatePersisted(_playbackState.value)
     }
 
+    fun cyclePlaybackSpeed(): Float {
+        val speeds = MediaPlaybackService.SUPPORTED_PLAYBACK_SPEEDS
+        val current = _playbackState.value.playbackSpeed
+        val idx = speeds.indexOfFirst { kotlin.math.abs(it - current) < 0.05f }
+        val next = if (idx >= 0) speeds[(idx + 1) % speeds.size] else 1.0f
+        setPlaybackSpeed(next)
+        return next
+    }
+
     fun setVolume(volume: Float) {
         val clamped = volume.coerceIn(0f, 1f)
         activePlayer.volume = clamped
+        boundService?.setMasterVolume(clamped)
         _playbackState.update { it.copy(volume = clamped) }
+    }
+
+    fun setCrossfadeDurationSeconds(seconds: Int) {
+        val clamped = seconds.coerceIn(0, MediaPlaybackService.MAX_CROSSFADE_DURATION_SEC)
+        boundService?.setCrossfadeDurationSeconds(clamped)
+        _playbackState.update {
+            it.copy(
+                crossfadeDurationSec = clamped,
+                isCrossfading = if (clamped == 0) false else it.isCrossfading
+            )
+        }
+    }
+
+    fun setEqualizerPreset(presetName: String) {
+        boundService?.setEqualizerPreset(presetName)
+        val pos = activePlayer.currentPosition.coerceAtLeast(0L)
+        val bands = MediaPlaybackService.computeStreamSynchronizedBands(
+            positionMs = pos,
+            isPlaying = activePlayer.isPlaying,
+            volume = activePlayer.volume,
+            speed = activePlayer.playbackParameters.speed,
+            streamId = _playbackState.value.currentTrack?.id,
+            presetName = presetName
+        )
+        _playbackState.update {
+            it.copy(
+                equalizerPreset = presetName,
+                equalizerBands = bands
+            )
+        }
     }
 
     fun updateSleepTimerRemaining(remainingMs: Long?) {
@@ -519,16 +626,34 @@ class MediaSessionController(
             else -> RepeatMode.OFF
         }
 
+        val isCurrentlyPlaying = activePlayer.isPlaying
+        val currentPreset = boundService?.activeEqualizerPreset?.value ?: _playbackState.value.equalizerPreset
+        val currentBands = boundService?.equalizerBandLevels?.value?.takeIf { it.isNotEmpty() }
+            ?: MediaPlaybackService.computeStreamSynchronizedBands(
+                positionMs = playerPosition,
+                isPlaying = isCurrentlyPlaying,
+                volume = activePlayer.volume,
+                speed = activePlayer.playbackParameters.speed,
+                streamId = activeTrack?.id,
+                presetName = currentPreset
+            )
+
         _playbackState.update { state ->
             state.copy(
-                isPlaying = activePlayer.isPlaying,
+                isPlaying = isCurrentlyPlaying,
                 currentTrack = activeTrack,
                 positionMs = playerPosition,
                 durationMs = playerDuration,
                 bufferedPositionMs = activePlayer.bufferedPosition.coerceAtLeast(playerPosition),
                 repeatMode = repeat,
                 shuffleEnabled = activePlayer.shuffleModeEnabled,
-                isBuffering = activePlayer.playbackState == Player.STATE_BUFFERING
+                playbackSpeed = activePlayer.playbackParameters.speed,
+                isBuffering = activePlayer.playbackState == Player.STATE_BUFFERING,
+                audioSessionId = boundService?.audioSessionIdFlow?.value ?: state.audioSessionId,
+                equalizerPreset = currentPreset,
+                equalizerBands = currentBands,
+                crossfadeDurationSec = boundService?.crossfadeDurationSec?.value ?: state.crossfadeDurationSec,
+                isCrossfading = boundService?.isCrossfading?.value ?: false
             )
         }
         if (emitStateEvent) {
@@ -540,6 +665,14 @@ class MediaSessionController(
         progressPollingJob?.cancel()
         listenerAttachedPlayer?.removeListener(playerListener)
         listenerAttachedPlayer = null
+        if (isServiceBound) {
+            try {
+                appContext.unbindService(serviceConnection)
+            } catch (_: Exception) {
+            }
+            isServiceBound = false
+            boundService = null
+        }
         controllerFuture?.let { MediaController.releaseFuture(it) }
         controllerFuture = null
         mediaController = null

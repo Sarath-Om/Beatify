@@ -25,11 +25,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -63,10 +68,12 @@ import com.example.components.TrackListItemRow
 import com.example.data.AlbumSummary
 import com.example.data.ArtistSummary
 import com.example.data.LibraryCategory
+import com.example.data.MusicEntry
 import com.example.data.PlaybackState
 import com.example.data.PlaylistEntity
 import com.example.data.TrackEntity
 import com.example.data.TrackSortOption
+import com.example.ui.theme.BeatifyAppleCrimson
 import com.example.ui.theme.ElevatedSurface
 import com.example.ui.theme.HighlightFavoritePink
 import com.example.ui.theme.LabelPrimary
@@ -93,6 +100,13 @@ fun MusicLibraryScreen(
     sortOption: TrackSortOption,
     onChangeSortOption: (TrackSortOption) -> Unit,
     onImportAudioFiles: () -> Unit,
+    favoriteMusicEntries: List<MusicEntry> = emptyList(),
+    audioPermissionGranted: Boolean = false,
+    youTubeAccountConnected: Boolean = false,
+    onScanLocalMediaStore: () -> Unit = {},
+    onConnectYouTubeLibrary: () -> Unit = {},
+    onPlayMusicEntry: (MusicEntry) -> Unit = {},
+    onToggleMusicEntryFavorite: (MusicEntry) -> Unit = {},
     onPlayTrackFromList: (TrackEntity, List<TrackEntity>) -> Unit,
     onPlayAlbum: (AlbumSummary) -> Unit,
     onPlayArtist: (ArtistSummary) -> Unit,
@@ -110,16 +124,18 @@ fun MusicLibraryScreen(
     var newPlaylistDesc by remember { mutableStateOf("") }
 
     val sortedTracks = remember(allTracks, sortOption) {
+        val unique = allTracks.distinctBy { it.id }
         when (sortOption) {
-            TrackSortOption.TITLE -> allTracks.sortedBy { it.title.lowercase() }
-            TrackSortOption.ARTIST -> allTracks.sortedBy { it.artist.lowercase() }
-            TrackSortOption.ALBUM -> allTracks.sortedBy { (it.album ?: "").lowercase() }
-            TrackSortOption.DATE_ADDED -> allTracks.sortedByDescending { it.addedAtEpochMs }
-            TrackSortOption.DURATION -> allTracks.sortedByDescending { it.durationMs }
+            TrackSortOption.TITLE -> unique.sortedBy { it.title.lowercase() }
+            TrackSortOption.ARTIST -> unique.sortedBy { it.artist.lowercase() }
+            TrackSortOption.ALBUM -> unique.sortedBy { (it.album ?: "").lowercase() }
+            TrackSortOption.DATE_ADDED -> unique.sortedByDescending { it.addedAtEpochMs }
+            TrackSortOption.DURATION -> unique.sortedByDescending { it.durationMs }
         }
     }
 
     val localTrackCount = remember(allTracks) { allTracks.count { it.isLocalFile } }
+    val uniqueFavEntries = remember(favoriteMusicEntries) { favoriteMusicEntries.distinctBy { it.id } }
 
     Box(
         modifier = modifier
@@ -151,7 +167,7 @@ fun MusicLibraryScreen(
                             fontWeight = FontWeight.ExtraBold
                         )
                         Text(
-                            text = "${allTracks.size} tracks ($localTrackCount imported local files) • ${playlists.size} playlists",
+                            text = "${allTracks.size} tracks ($localTrackCount local files) • ${playlists.size} playlists",
                             color = SecondaryTextZinc,
                             fontSize = 12.sp
                         )
@@ -178,80 +194,199 @@ fun MusicLibraryScreen(
                 }
             }
 
-            // 2. Import Local Audio Banner (MP3, M4A/AAC, FLAC, WAV, OGG, Opus)
+            // 2. Local Device Audio (MediaStore Scanner + File Picker) & YouTube Account Sync Row
             item {
-                Surface(
-                    color = MainSurface,
-                    shape = RoundedCornerShape(20.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(1.dp, SpecularBorderLight, RoundedCornerShape(20.dp))
-                        .clip(RoundedCornerShape(20.dp))
-                        .clickable { onImportAudioFiles() }
-                        .testTag("library_import_audio_banner")
-                ) {
-                    Row(
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(
+                        color = MainSurface,
+                        shape = RoundedCornerShape(20.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(
-                                Brush.horizontalGradient(
-                                    colors = listOf(
-                                        SystemBlue.copy(alpha = 0.22f),
-                                        SecondaryViolet.copy(alpha = 0.16f),
-                                        MainSurface
+                            .border(1.dp, SpecularBorderLight, RoundedCornerShape(20.dp))
+                            .clip(RoundedCornerShape(20.dp))
+                            .clickable { onImportAudioFiles() }
+                            .testTag("library_import_audio_banner")
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    Brush.horizontalGradient(
+                                        colors = listOf(
+                                            SystemBlue.copy(alpha = 0.22f),
+                                            SecondaryViolet.copy(alpha = 0.16f),
+                                            MainSurface
+                                        )
                                     )
                                 )
-                            )
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            modifier = Modifier.weight(1f),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(46.dp)
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(SystemGreen.copy(alpha = 0.2f)),
-                                contentAlignment = Alignment.Center
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.FolderOpen,
-                                    contentDescription = null,
-                                    tint = SystemGreen
-                                )
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(46.dp)
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .background(SystemGreen.copy(alpha = 0.2f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.FolderOpen,
+                                            contentDescription = null,
+                                            tint = SystemGreen
+                                        )
+                                    }
+                                    Column {
+                                        Text(
+                                            text = "Local Android Music (MediaStore & Picker)",
+                                            color = LabelPrimary,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "Supports MP3, M4A, AAC, FLAC, WAV & OGG with artwork & duration",
+                                            color = SecondaryTextZinc,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                }
                             }
-                            Column {
-                                Text(
-                                    text = "Import Device Audio Files",
-                                    color = LabelPrimary,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "Supports MP3, M4A/AAC, FLAC, WAV, OGG & Opus with ID3 artwork extraction",
-                                    color = SecondaryTextZinc,
-                                    fontSize = 12.sp
-                                )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = onScanLocalMediaStore,
+                                    colors = ButtonDefaults.buttonColors(containerColor = SystemGreen.copy(alpha = 0.85f)),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("library_scan_mediastore_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = null,
+                                        tint = Color.Black,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (audioPermissionGranted) "Scan Device Audio" else "Grant Audio & Scan",
+                                        color = Color.Black,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                Button(
+                                    onClick = onImportAudioFiles,
+                                    colors = ButtonDefaults.buttonColors(containerColor = SystemBlue),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("library_browse_files_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.FolderOpen,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Browse Audio Files",
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
+                    }
 
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        Surface(
-                            color = SystemBlue,
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text(
-                                text = "Browse",
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    // YouTube Account Library Sync Strip
+                    Surface(
+                        color = MainSurface,
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(
+                                1.dp,
+                                if (youTubeAccountConnected) SystemGreen.copy(alpha = 0.5f) else BeatifyAppleCrimson.copy(alpha = 0.45f),
+                                RoundedCornerShape(18.dp)
                             )
+                            .testTag("library_youtube_sync_card")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.LibraryMusic,
+                                    contentDescription = null,
+                                    tint = if (youTubeAccountConnected) SystemGreen else BeatifyAppleCrimson,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Column {
+                                    Text(
+                                        text = if (youTubeAccountConnected) "YouTube Music Library Connected" else "Connect YouTube Music Library",
+                                        color = LabelPrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = if (youTubeAccountConnected) {
+                                            "Playlists, liked songs & subscriptions synced idempotently"
+                                        } else {
+                                            "Import playlists, liked tracks & subscribed channels"
+                                        },
+                                        color = SecondaryTextZinc,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+
+                            Button(
+                                onClick = onConnectYouTubeLibrary,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (youTubeAccountConnected) SystemBlue else BeatifyAppleCrimson
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                modifier = Modifier.testTag("library_connect_youtube_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudSync,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text(
+                                    text = if (youTubeAccountConnected) "Resync" else "Connect",
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
                 }
@@ -341,12 +476,75 @@ fun MusicLibraryScreen(
                 }
 
                 LibraryCategory.FAVORITES -> {
-                    if (favoriteTracks.isEmpty()) {
+                    if (favoriteTracks.isEmpty() && uniqueFavEntries.isEmpty()) {
                         item {
                             EmptyLibraryCard("No favorite tracks yet. Tap the heart icon on any track to save it here.")
                         }
                     } else {
-                        items(favoriteTracks, key = { "lib_fav_${it.id}" }) { track ->
+                        items(uniqueFavEntries, key = { "lib_fav_entry_${it.id}" }) { entry ->
+                            val expectedTrackId = if (entry.type == "radio") "radio_${entry.id}" else "ytm_${entry.id}"
+                            val isCurrent = playbackState.currentTrack?.id == expectedTrackId
+                            val isPlaying = isCurrent && playbackState.isPlaying
+
+                            Surface(
+                                color = if (isCurrent) ElevatedSurface else MainSurface,
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(1.dp, SubtleBorderWhite, RoundedCornerShape(16.dp))
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .clickable { onPlayMusicEntry(entry) }
+                                    .testTag("lib_fav_music_entry_${entry.id}")
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    TrackArtworkSquare(
+                                        artworkUri = entry.thumbnail,
+                                        accentColorHex = if (entry.type == "radio") 0xFFFA2D48 else 0xFF0A84FF,
+                                        size = 50.dp,
+                                        cornerRadius = 10.dp,
+                                        isPlaying = isPlaying
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = entry.title,
+                                            color = LabelPrimary,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "${entry.artist} • ${entry.source}",
+                                            color = SecondaryTextZinc,
+                                            fontSize = 12.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { onToggleMusicEntryFavorite(entry) },
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .testTag("lib_unfavorite_music_entry_${entry.id}")
+                                    ) {
+                                        Icon(
+                                            imageVector = if (entry.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                            contentDescription = "Remove from favorites",
+                                            tint = HighlightFavoritePink,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        items(favoriteTracks.distinctBy { it.id }, key = { "lib_fav_${it.id}" }) { track ->
                             TrackListItemRow(
                                 track = track,
                                 isCurrentTrack = playbackState.currentTrack?.id == track.id,

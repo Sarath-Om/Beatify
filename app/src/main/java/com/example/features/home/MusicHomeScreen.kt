@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayArrow
@@ -66,9 +67,13 @@ import com.example.data.AlbumSummary
 import com.example.data.PlaybackState
 import com.example.data.PlaylistEntity
 import com.example.data.TrackEntity
+import com.example.services.MusicRadioEntry
+import com.example.services.MusicRadioFeedPayload
+import com.example.services.MusicRadioRssService
 import com.example.ui.theme.ElevatedSurface
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Radio
 import com.example.ui.theme.BeatifyAppleCrimson
 import com.example.ui.theme.HighlightFavoritePink
@@ -93,6 +98,9 @@ fun MusicHomeScreen(
     playlists: List<PlaylistEntity>,
     playbackState: PlaybackState,
     currentUserUid: String? = null,
+    musicRadioFeed: MusicRadioFeedPayload? = null,
+    onPlayMusicRadioEntry: (MusicRadioEntry) -> Unit = {},
+    onToggleMusicRadioEntryFavorite: (MusicRadioEntry) -> Unit = {},
     onPlayTrackFromList: (TrackEntity, List<TrackEntity>) -> Unit,
     onShufflePlayAll: () -> Unit,
     onPlayPlaylist: (PlaylistEntity) -> Unit,
@@ -110,6 +118,18 @@ fun MusicHomeScreen(
     modifier: Modifier = Modifier
 ) {
     var quickQuery by remember { mutableStateOf("") }
+    val feedEntries = remember(musicRadioFeed, quickQuery) {
+        val base = (musicRadioFeed?.entries?.takeIf { it.isNotEmpty() }
+            ?: MusicRadioRssService.defaultSeededEntries()).distinctBy { it.id }
+        if (quickQuery.isBlank()) {
+            base
+        } else {
+            val q = quickQuery.trim().lowercase()
+            base.filter {
+                it.title.lowercase().contains(q) || it.artist.lowercase().contains(q)
+            }
+        }
+    }
     val greeting = remember {
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
         when (hour) {
@@ -403,6 +423,104 @@ fun MusicHomeScreen(
                 }
             }
 
+            // 3b. Always-Visible Live Radio & Global Top Feed (Cached in Room & Played in Background via Media3)
+            if (feedEntries.isNotEmpty()) {
+                item {
+                    SectionHeaderRow(
+                        title = "Live Radio & Top Music Feed",
+                        subtitle = "Instant offline cache • Background playback via Media3 ExoPlayer"
+                    )
+                }
+                items(feedEntries, key = { "home_feed_${it.id}" }) { entry ->
+                    val isRadio = entry.type == "radio"
+                    val expectedTrackId = if (isRadio) "radio_${entry.id}" else "ytm_${entry.id}"
+                    val isCurrent = playbackState.currentTrack?.id == expectedTrackId
+                    val isPlaying = isCurrent && playbackState.isPlaying
+
+                    Surface(
+                        color = if (isCurrent) ElevatedSurface else MainSurface,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(
+                                width = 1.dp,
+                                color = if (isCurrent) {
+                                    if (isRadio) BeatifyAppleCrimson.copy(alpha = 0.6f) else SystemBlue.copy(alpha = 0.6f)
+                                } else {
+                                    SubtleBorderWhite
+                                },
+                                shape = RoundedCornerShape(16.dp)
+                            )
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable { onPlayMusicRadioEntry(entry) }
+                            .testTag("home_feed_entry_${entry.id}")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TrackArtworkSquare(
+                                artworkUri = entry.thumbnail,
+                                accentColorHex = if (isRadio) 0xFFFA2D48 else 0xFF0A84FF,
+                                size = 52.dp,
+                                cornerRadius = 12.dp,
+                                isPlaying = isPlaying
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = entry.title,
+                                    color = if (isCurrent) SystemBlue else LabelPrimary,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = entry.artist,
+                                    color = SecondaryTextZinc,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            IconButton(
+                                onClick = { onToggleMusicRadioEntryFavorite(entry) },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .testTag("home_feed_favorite_${entry.id}")
+                            ) {
+                                Icon(
+                                    imageVector = if (entry.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                    contentDescription = if (entry.favorite) "Remove from favorites" else "Save to favorites",
+                                    tint = if (entry.favorite) HighlightFavoritePink else SecondaryTextZinc,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = { onPlayMusicRadioEntry(entry) },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        (if (isRadio) BeatifyAppleCrimson else SystemBlue).copy(alpha = 0.18f)
+                                    )
+                            ) {
+                                Icon(
+                                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = if (isPlaying) "Pause" else "Play in Background",
+                                    tint = if (isRadio) BeatifyAppleCrimson else SystemBlue,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // 4. Favorite Tracks Quick Grid
             if (favoriteTracks.isNotEmpty() && quickQuery.isBlank()) {
                 item {
@@ -516,8 +634,8 @@ fun MusicHomeScreen(
             // 9. Library & Streamed Tracks (Real Data Only)
             item {
                 SectionHeaderRow(
-                    title = if (quickQuery.isBlank()) "Your Library & Streamed Tracks" else "Matching Tracks (${filteredCatalog.size})",
-                    subtitle = "Real YouTube Music streams & imported device audio played via Media3 ExoPlayer"
+                    title = if (quickQuery.isBlank()) "Your Library & Saved Tracks" else "Matching Tracks (${filteredCatalog.size})",
+                    subtitle = "Streamed tracks & imported device audio played via Media3 ExoPlayer"
                 )
             }
 
@@ -545,7 +663,7 @@ fun MusicHomeScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Search YouTube Music for real artists, songs, and albums, or import audio files from your device.",
+                                text = "Search for artists, songs, and albums, or import audio files from your device.",
                                 color = SecondaryTextZinc,
                                 fontSize = 13.sp
                             )
@@ -565,7 +683,7 @@ fun MusicHomeScreen(
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Search YouTube Music", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text("Search Music", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 }
                                 Button(
                                     onClick = onImportAudioFiles,

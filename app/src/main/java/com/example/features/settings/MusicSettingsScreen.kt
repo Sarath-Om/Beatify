@@ -97,12 +97,16 @@ fun MusicSettingsScreen(
     currentUserEmail: String? = null,
     currentUserDisplayName: String? = null,
     syncStatus: BeatifySyncStatus = BeatifySyncStatus.SignedOut,
+    youTubeAccountConnected: Boolean = false,
+    youTubeConnectedChannelLabel: String? = null,
     otaManifest: OtaBundleManifest = OtaBundleManifest(),
     notificationCategories: Set<String> = setOf("account", "music", "podcasts", "playlists", "updates", "system"),
     marketingOptIn: Boolean = false,
     pushNotifications: List<BeatifyPushNotificationItem> = emptyList(),
     onOpenAuthSheet: () -> Unit = {},
     onTriggerCloudSync: () -> Unit = {},
+    onConnectYouTubeAccount: () -> Unit = {},
+    onDisconnectYouTubeAccount: () -> Unit = {},
     onCheckOtaUpdate: () -> Unit = {},
     onSwitchOtaChannel: (String) -> Unit = {},
     onRollbackOtaBundle: () -> Unit = {},
@@ -112,6 +116,7 @@ fun MusicSettingsScreen(
     onNavigateDeepLink: (String) -> Unit = {},
     onSelectAudioQuality: (AudioQualityPreset) -> Unit,
     onToggleGaplessPlayback: (Boolean) -> Unit,
+    onSetCrossfadeDurationSeconds: (Int) -> Unit = {},
     onSetSleepTimerMinutes: (Int?) -> Unit,
     onRequestNotificationPermission: () -> Unit,
     onRescanLibrary: () -> Unit,
@@ -146,7 +151,7 @@ fun MusicSettingsScreen(
                     fontWeight = FontWeight.ExtraBold
                 )
                 Text(
-                    text = "Google Sign-In, Cloud Firestore sync, OTA bundle verification, FCM alerts & Media3 audio",
+                    text = "Google Sign-In, YouTube Music Library Sync, Cloud Firestore & Media3 Audio",
                     color = SecondaryTextZinc,
                     fontSize = 13.sp
                 )
@@ -251,6 +256,86 @@ fun MusicSettingsScreen(
                                 Text(
                                     text = "Sync Now",
                                     color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 1b. YouTube Account Connection & Library Sync (Separate from basic Google identity login)
+            item {
+                SettingsCardContainer(
+                    title = "YouTube Account & Library Sync",
+                    icon = Icons.Default.CloudSync,
+                    iconTint = if (youTubeAccountConnected) SystemGreen else SystemBlue
+                ) {
+                    Text(
+                        text = if (youTubeAccountConnected) {
+                            "Connected: ${youTubeConnectedChannelLabel ?: (currentUserEmail ?: "YouTube Music Account")}"
+                        } else {
+                            "Connect your YouTube / YouTube Music library to import playlists, liked songs, and subscribed artist feeds."
+                        },
+                        color = LabelPrimary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = if (youTubeAccountConnected) {
+                            "Idempotent metadata sync active • Imported playlists and tracks are linked to your account without duplicates."
+                        } else {
+                            "Uses YouTube read-only catalog & playlist sync. Disconnect anytime without deleting local files."
+                        },
+                        color = if (youTubeAccountConnected) SystemGreen else SecondaryTextZinc,
+                        fontSize = 12.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = onConnectYouTubeAccount,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (youTubeAccountConnected) SystemBlue else BeatifyAppleCrimson
+                            ),
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("settings_connect_youtube_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CloudSync,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (youTubeAccountConnected) "Sync YouTube Library" else "Connect YouTube Account",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        if (youTubeAccountConnected) {
+                            Button(
+                                onClick = onDisconnectYouTubeAccount,
+                                colors = ButtonDefaults.buttonColors(containerColor = ElevatedSurface),
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .border(1.dp, SubtleBorderWhite, RoundedCornerShape(14.dp))
+                                    .testTag("settings_disconnect_youtube_button")
+                            ) {
+                                Text(
+                                    text = "Disconnect YouTube",
+                                    color = HighlightFavoritePink,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -602,6 +687,32 @@ fun MusicSettingsScreen(
                             ),
                             modifier = Modifier.testTag("settings_gapless_switch")
                         )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Crossfade Duration (${if (playbackState.crossfadeDurationSec == 0) "Off" else "${playbackState.crossfadeDurationSec}s"}):",
+                        color = SecondaryTextZinc,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(0 to "Off", 2 to "2s", 4 to "4s", 6 to "6s", 8 to "8s", 12 to "12s").forEach { (sec, label) ->
+                            FilterChip(
+                                selected = playbackState.crossfadeDurationSec == sec,
+                                onClick = { onSetCrossfadeDurationSeconds(sec) },
+                                label = { Text(label, fontSize = 12.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = SystemBlue.copy(alpha = 0.24f),
+                                    selectedLabelColor = LabelPrimary
+                                ),
+                                modifier = Modifier.testTag("settings_crossfade_${sec}s")
+                            )
+                        }
                     }
                 }
             }

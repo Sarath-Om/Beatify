@@ -44,7 +44,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +66,7 @@ import com.example.components.SearchBar
 import com.example.components.TrackArtworkSquare
 import com.example.components.TrackListItemRow
 import com.example.data.AlbumSummary
+import com.example.data.MusicEntry
 import com.example.data.PlaybackState
 import com.example.data.PlaylistEntity
 import com.example.data.TrackEntity
@@ -92,7 +96,7 @@ enum class MusicSearchUiState(val statusBadge: String) {
     IDLE("Idle"),
     FOCUSED("Focused"),
     TYPING("Typing"),
-    LOADING("Searching YouTube Music..."),
+    LOADING("Searching..."),
     RESULTS("Results"),
     EMPTY_RESULTS("No tracks found"),
     NETWORK_ERROR("Network error"),
@@ -102,8 +106,8 @@ enum class MusicSearchUiState(val statusBadge: String) {
 
 private enum class SearchScopeFilter(val label: String) {
     ALL("All"),
-    YOUTUBE_MUSIC("YouTube Music"),
-    RSS_DISCOVERY("Channel RSS & News"),
+    YOUTUBE_MUSIC("Top Tracks"),
+    RSS_DISCOVERY("New Releases"),
     ARTISTS("Artists"),
     ALBUMS("Albums"),
     LOCAL("Local Files")
@@ -129,12 +133,15 @@ fun MusicSearchScreen(
     totalCatalogChannels: Int = 0,
     totalSyncedVideos: Int = 0,
     isSyncingRssFeeds: Boolean = false,
+    musicEntries: List<MusicEntry> = emptyList(),
     onSearchQueryChange: (String) -> Unit = {},
     onSearchFocusChange: (Boolean) -> Unit = {},
     onRetryRemoteSearch: () -> Unit = {},
     onTriggerRssFeedSync: () -> Unit = {},
     onSelectChannel: (YouTubeChannelEntity?) -> Unit = {},
     onPlayRssVideo: (YouTubeVideoEntity) -> Unit = {},
+    onPlayMusicEntry: (MusicEntry) -> Unit = {},
+    onToggleMusicEntryFavorite: (MusicEntry) -> Unit = {},
     onChangeSortOption: (TrackSortOption) -> Unit,
     onPlayTrackFromList: (TrackEntity, List<TrackEntity>) -> Unit,
     onPlayRemoteSearchResult: (MusicSearchResult, List<MusicSearchResult>) -> Unit = { _, _ -> },
@@ -147,20 +154,22 @@ fun MusicSearchScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var internalQuery by remember(searchQuery) { mutableStateOf(searchQuery) }
+    // Keep a stable MutableState across recompositions so IME composition spans do not reset mid-typing
+    var internalQuery by remember { mutableStateOf(searchQuery) }
+    LaunchedEffect(searchQuery) {
+        if (searchQuery != internalQuery) {
+            internalQuery = searchQuery
+        }
+    }
     var isFocused by remember { mutableStateOf(false) }
     var scopeFilter by remember { mutableStateOf(SearchScopeFilter.ALL) }
 
-    val activeQuery = if (searchQuery.isNotEmpty() || internalQuery.isEmpty()) {
-        searchQuery.ifEmpty { internalQuery }
-    } else {
-        internalQuery
-    }
+    val activeQuery = internalQuery
 
-    // Real local files only (never fake/demo tracks)
+    // Real local files only (never fake/demo tracks), deduplicated by id
     val localMatchingTracks = remember(allTracks, activeQuery, sortOption) {
         val q = activeQuery.trim().lowercase()
-        val realLocal = allTracks.filter { it.isLocalFile && !it.isDemoTrack }
+        val realLocal = allTracks.filter { it.isLocalFile && !it.isDemoTrack }.distinctBy { it.id }
         val filtered = if (q.isEmpty()) {
             realLocal
         } else {
@@ -179,9 +188,14 @@ fun MusicSearchScreen(
         }
     }
 
-    // Filter synchronized RSS videos by active query when typing
+    // Always show latest releases (defaulting to seeded releases if Room is still loading), deduplicated by videoId
     val displayedRssVideos = remember(latestRssVideos, selectedChannel, selectedChannelVideos, activeQuery) {
-        val base = if (selectedChannel != null) selectedChannelVideos else latestRssVideos
+        val base = if (selectedChannel != null) {
+            selectedChannelVideos
+        } else {
+            latestRssVideos.takeIf { it.isNotEmpty() }
+                ?: com.example.services.YouTubeChannelCatalog.defaultSeededVideos()
+        }.distinctBy { it.videoId }
         val q = activeQuery.trim().lowercase()
         if (q.isEmpty()) {
             base
@@ -194,23 +208,52 @@ fun MusicSearchScreen(
         }
     }
 
-    // Filter OPML channels by active query when typing
+    // Filter OPML channels by active query when typing, deduplicated by channelId
     val displayedChannels = remember(catalogChannels, activeQuery) {
+        val uniqueChannels = catalogChannels.distinctBy { it.channelId }
         val q = activeQuery.trim().lowercase()
         if (q.isEmpty()) {
-            catalogChannels
+            uniqueChannels
         } else {
-            catalogChannels.filter { c ->
+            uniqueChannels.filter { c ->
                 c.title.lowercase().contains(q) || c.channelId.lowercase().contains(q)
             }
         }
     }
 
-    val remoteTrackEntities = remember(remoteTrackResults, allTracks) {
-        val favSet = allTracks.filter { it.isFavorite }.map { it.id }.toSet()
-        remoteTrackResults.map { res ->
-            res.toTrackEntity().copy(isFavorite = res.id in favSet)
+    // Filter cached MusicEntry items by query (matches "music" via source = "YouTube Music" or title/artist)
+    val matchingMusicEntries = remember(musicEntries, activeQuery) {
+        val uniqueEntries = musicEntries.distinctBy { it.id }
+        val q = activeQuery.trim().lowercase()
+        if (q.isEmpty()) {
+            uniqueEntries
+        } else {
+            uniqueEntries.filter { entry ->
+                entry.title.lowercase().contains(q) ||
+                    entry.artist.lowercase().contains(q) ||
+                    entry.source.lowercase().contains(q) ||
+                    entry.description.lowercase().contains(q)
+            }
         }
+    }
+
+    val remoteTrackEntities = remember(remoteTrackResults, allTracks, musicEntries) {
+        val favSet = allTracks.filter { it.isFavorite }.map { it.id }.toSet() +
+            musicEntries.filter { it.favorite }.flatMap { listOf(it.id, "ytm_${it.id}", "radio_${it.id}") }.toSet()
+        remoteTrackResults
+            .distinctBy { it.id }
+            .map { res ->
+                res.toTrackEntity().copy(isFavorite = res.id in favSet)
+            }
+            .distinctBy { it.id }
+    }
+
+    val uniqueRemoteArtists = remember(remoteArtistResults) {
+        remoteArtistResults.distinctBy { it.id }
+    }
+
+    val uniqueRemoteAlbums = remember(remoteAlbumResults) {
+        remoteAlbumResults.distinctBy { it.id }
     }
 
     val effectiveState = when {
@@ -268,7 +311,7 @@ fun MusicSearchScreen(
                             fontWeight = FontWeight.ExtraBold
                         )
                         Text(
-                            text = "YouTube Music • OPML Channel RSS • Music News & Local Audio",
+                            text = "Songs • Artist Channels • New Releases & Local Audio",
                             color = SecondaryTextZinc,
                             fontSize = 12.sp,
                             maxLines = 1,
@@ -379,7 +422,7 @@ fun MusicSearchScreen(
                 }
             }
 
-            // OPML Channel Catalog & RSS Feed Sync Bar (Sections 1, 3, 5 & 8)
+            // Artist Channels & New Releases Feed (Plays directly in background via Media3 ExoPlayer)
             if (scopeFilter == SearchScopeFilter.ALL || scopeFilter == SearchScopeFilter.RSS_DISCOVERY) {
                 item {
                     Surface(
@@ -405,20 +448,20 @@ fun MusicSearchScreen(
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.RssFeed,
+                                        imageVector = Icons.Default.Newspaper,
                                         contentDescription = null,
                                         tint = BeatifyAppleCrimson,
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Column {
                                         Text(
-                                            text = "YouTube Channel RSS Discovery",
+                                            text = "Featured Artist Channels & Feed",
                                             color = LabelPrimary,
                                             fontSize = 14.sp,
                                             fontWeight = FontWeight.Bold
                                         )
                                         Text(
-                                            text = "${totalCatalogChannels.coerceAtLeast(displayedChannels.size)} OPML channels • $totalSyncedVideos synced RSS uploads",
+                                            text = "${totalCatalogChannels.coerceAtLeast(displayedChannels.size)} artist channels • ${totalSyncedVideos.coerceAtLeast(displayedRssVideos.size)} tracks ready",
                                             color = SecondaryTextZinc,
                                             fontSize = 11.sp
                                         )
@@ -439,16 +482,16 @@ fun MusicSearchScreen(
                                             modifier = Modifier.size(14.dp)
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Syncing...", color = Color.White, fontSize = 11.sp)
+                                        Text("Updating...", color = Color.White, fontSize = 11.sp)
                                     } else {
                                         Icon(
                                             imageVector = Icons.Default.Refresh,
-                                            contentDescription = "Sync RSS Feeds",
+                                            contentDescription = "Refresh Feed",
                                             tint = Color.White,
                                             modifier = Modifier.size(14.dp)
                                         )
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Sync Feeds", color = Color.White, fontSize = 11.sp)
+                                        Text("Refresh", color = Color.White, fontSize = 11.sp)
                                     }
                                 }
                             }
@@ -501,7 +544,7 @@ fun MusicSearchScreen(
                     }
                 }
 
-                // Synchronized Channel RSS Videos & Music News Releases
+                // Always-Visible Latest Releases Feed (Plays in Background via Media3 ExoPlayer)
                 if (displayedRssVideos.isNotEmpty()) {
                     item {
                         Row(
@@ -521,9 +564,9 @@ fun MusicSearchScreen(
                                 )
                                 Text(
                                     text = if (selectedChannel != null) {
-                                        "${selectedChannel.title} • Latest Uploads (${displayedRssVideos.size})"
+                                        "${selectedChannel.title} • Latest Releases (${displayedRssVideos.size})"
                                     } else {
-                                        "Latest Channel Releases & Music News (${displayedRssVideos.size})"
+                                        "Latest Music Releases (${displayedRssVideos.size})"
                                     },
                                     color = LabelPrimary,
                                     fontSize = 16.sp,
@@ -531,7 +574,7 @@ fun MusicSearchScreen(
                                 )
                             }
                             Text(
-                                text = "Atom RSS",
+                                text = "Background Audio",
                                 color = SystemGreen,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold
@@ -543,12 +586,19 @@ fun MusicSearchScreen(
                         displayedRssVideos.take(15),
                         key = { "rss_video_${it.videoId}" }
                     ) { rssVideo ->
+                        val isCurrent = playbackState.currentTrack?.id == "ytm_${rssVideo.videoId}"
+                        val isPlaying = isCurrent && playbackState.isPlaying
+
                         Surface(
-                            color = MainSurface,
+                            color = if (isCurrent) ElevatedSurface else MainSurface,
                             shape = RoundedCornerShape(16.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .border(1.dp, SubtleBorderWhite, RoundedCornerShape(16.dp))
+                                .border(
+                                    width = 1.dp,
+                                    color = if (isCurrent) SystemBlue.copy(alpha = 0.6f) else SubtleBorderWhite,
+                                    shape = RoundedCornerShape(16.dp)
+                                )
                                 .clip(RoundedCornerShape(16.dp))
                                 .clickable { onPlayRssVideo(rssVideo) }
                                 .testTag("rss_video_row_${rssVideo.videoId}")
@@ -563,13 +613,14 @@ fun MusicSearchScreen(
                                     artworkUri = rssVideo.thumbnailUrl,
                                     accentColorHex = 0xFFFA2D48,
                                     size = 54.dp,
-                                    cornerRadius = 10.dp
+                                    cornerRadius = 10.dp,
+                                    isPlaying = isPlaying
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = rssVideo.title,
-                                        color = LabelPrimary,
+                                        color = if (isCurrent) SystemBlue else LabelPrimary,
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold,
                                         maxLines = 1,
@@ -583,25 +634,9 @@ fun MusicSearchScreen(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
-                                        text = "YouTube Channel Upload • Tap to resolve audio or open video",
+                                        text = if (isPlaying) "Playing in Background" else "Tap to play in background",
                                         color = SystemBlue,
                                         fontSize = 10.sp
-                                    )
-                                }
-                                IconButton(
-                                    onClick = {
-                                        BeatifyMediaCatalog.openYouTubeMusicOfficial(
-                                            context,
-                                            rssVideo.videoUrl
-                                        )
-                                    },
-                                    modifier = Modifier.size(48.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
-                                        contentDescription = "Open YouTube Video",
-                                        tint = SecondaryTextZinc,
-                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
                             }
@@ -693,7 +728,7 @@ fun MusicSearchScreen(
                                 )
                                 Text(
                                     text = searchErrorMessage
-                                        ?: "Unable to complete YouTube Music request. Check your connection and retry.",
+                                        ?: "Unable to complete search request. Check your connection and retry.",
                                     color = SecondaryTextZinc,
                                     fontSize = 12.sp
                                 )
@@ -718,20 +753,20 @@ fun MusicSearchScreen(
                 }
             }
 
-            // YouTube Music Artists Section
+            // Artists Section
             if ((scopeFilter == SearchScopeFilter.ALL || scopeFilter == SearchScopeFilter.ARTISTS) &&
-                remoteArtistResults.isNotEmpty()
+                uniqueRemoteArtists.isNotEmpty()
             ) {
                 item {
                     Text(
-                        text = "YouTube Music Artists",
+                        text = "Artists",
                         color = LabelPrimary,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        items(remoteArtistResults, key = { "yt_artist_${it.id}" }) { artist ->
+                        items(uniqueRemoteArtists, key = { "yt_artist_${it.id}" }) { artist ->
                             Surface(
                                 color = MainSurface,
                                 shape = RoundedCornerShape(16.dp),
@@ -740,7 +775,8 @@ fun MusicSearchScreen(
                                     .border(1.dp, SubtleBorderWhite, RoundedCornerShape(16.dp))
                                     .clip(RoundedCornerShape(16.dp))
                                     .clickable {
-                                        BeatifyMediaCatalog.openYouTubeMusicOfficial(context, artist.browseEndpointUrl)
+                                        internalQuery = artist.name
+                                        onSearchQueryChange(artist.name)
                                     }
                             ) {
                                 Column(
@@ -789,20 +825,20 @@ fun MusicSearchScreen(
                 }
             }
 
-            // YouTube Music Albums Section
+            // Albums Section
             if ((scopeFilter == SearchScopeFilter.ALL || scopeFilter == SearchScopeFilter.ALBUMS) &&
-                remoteAlbumResults.isNotEmpty()
+                uniqueRemoteAlbums.isNotEmpty()
             ) {
                 item {
                     Text(
-                        text = "YouTube Music Albums",
+                        text = "Albums",
                         color = LabelPrimary,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        items(remoteAlbumResults, key = { "yt_album_${it.id}" }) { album ->
+                        items(uniqueRemoteAlbums, key = { "yt_album_${it.id}" }) { album ->
                             Surface(
                                 color = MainSurface,
                                 shape = RoundedCornerShape(16.dp),
@@ -811,7 +847,9 @@ fun MusicSearchScreen(
                                     .border(1.dp, SubtleBorderWhite, RoundedCornerShape(16.dp))
                                     .clip(RoundedCornerShape(16.dp))
                                     .clickable {
-                                        BeatifyMediaCatalog.openYouTubeMusicOfficial(context, album.browseEndpointUrl)
+                                        val nextQuery = "${album.title} ${album.artistName}".trim()
+                                        internalQuery = nextQuery
+                                        onSearchQueryChange(nextQuery)
                                     }
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
@@ -855,7 +893,103 @@ fun MusicSearchScreen(
                 }
             }
 
-            // YouTube Music Track Results Section
+            // Cached Music-Radio Feed Matches with Heart Favorite Button
+            if ((scopeFilter == SearchScopeFilter.ALL || scopeFilter == SearchScopeFilter.YOUTUBE_MUSIC) &&
+                matchingMusicEntries.isNotEmpty()
+            ) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Featured Charts & Radio (${matchingMusicEntries.size})",
+                            color = LabelPrimary,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Instant Stream",
+                            color = BeatifyAppleCrimson,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                items(
+                    matchingMusicEntries.take(12),
+                    key = { "search_music_entry_${it.id}" }
+                ) { entry ->
+                    val expectedTrackId = if (entry.type == "radio") "radio_${entry.id}" else "ytm_${entry.id}"
+                    val isCurrent = playbackState.currentTrack?.id == expectedTrackId
+                    val isPlaying = isCurrent && playbackState.isPlaying
+
+                    Surface(
+                        color = if (isCurrent) ElevatedSurface else MainSurface,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(
+                                width = 1.dp,
+                                color = if (isCurrent) BeatifyAppleCrimson.copy(alpha = 0.6f) else SubtleBorderWhite,
+                                shape = RoundedCornerShape(16.dp)
+                            )
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable { onPlayMusicEntry(entry) }
+                            .testTag("search_music_entry_${entry.id}")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TrackArtworkSquare(
+                                artworkUri = entry.thumbnail,
+                                accentColorHex = if (entry.type == "radio") 0xFFFA2D48 else 0xFF0A84FF,
+                                size = 50.dp,
+                                cornerRadius = 10.dp,
+                                isPlaying = isPlaying
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = entry.title,
+                                    color = if (isCurrent) BeatifyAppleCrimson else LabelPrimary,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "${entry.artist} • ${entry.source}",
+                                    color = SecondaryTextZinc,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            IconButton(
+                                onClick = { onToggleMusicEntryFavorite(entry) },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .testTag("favorite_music_entry_${entry.id}")
+                            ) {
+                                Icon(
+                                    imageVector = if (entry.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                    contentDescription = if (entry.favorite) "Remove from favorites" else "Save to favorites",
+                                    tint = if (entry.favorite) HighlightFavoritePink else SecondaryTextZinc,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Streaming Track Results Section
             if (scopeFilter == SearchScopeFilter.ALL || scopeFilter == SearchScopeFilter.YOUTUBE_MUSIC) {
                 if (remoteTrackEntities.isNotEmpty()) {
                     item {
@@ -865,13 +999,13 @@ fun MusicSearchScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "YouTube Music Results (${remoteTrackEntities.size})",
+                                text = "Streaming Songs (${remoteTrackEntities.size})",
                                 color = LabelPrimary,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Real Provider",
+                                text = "Background Audio",
                                 color = SystemBlue,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold
@@ -896,17 +1030,13 @@ fun MusicSearchScreen(
                             onToggleFavorite = { onToggleFavorite(trackEntity) },
                             onPlayNext = { onPlayNext(trackEntity) },
                             onAddToQueue = { onAddToQueue(trackEntity) },
-                            onAddToPlaylist = { playlistId -> onAddToPlaylist(playlistId, trackEntity) },
-                            onOpenExternal = { extTrack ->
-                                val url = extTrack.externalLaunchUri ?: extTrack.contentUri
-                                BeatifyMediaCatalog.openYouTubeMusicOfficial(context, url)
-                            }
+                            onAddToPlaylist = { playlistId -> onAddToPlaylist(playlistId, trackEntity) }
                         )
                     }
                 }
             }
 
-            // Local Audio Files Section (Clearly labeled separately from YouTube Music)
+            // Local Audio Files Section
             if (scopeFilter == SearchScopeFilter.ALL || scopeFilter == SearchScopeFilter.LOCAL) {
                 if (localMatchingTracks.isNotEmpty()) {
                     item {
@@ -946,12 +1076,12 @@ fun MusicSearchScreen(
                 }
             }
 
-            // Honest Empty / Idle State (Never shows fake sample tracks to fill space)
+            // Empty / Idle State
             val hasAnyDisplayedItems =
-                ((scopeFilter == SearchScopeFilter.ALL || scopeFilter == SearchScopeFilter.YOUTUBE_MUSIC) && remoteTrackEntities.isNotEmpty()) ||
+                ((scopeFilter == SearchScopeFilter.ALL || scopeFilter == SearchScopeFilter.YOUTUBE_MUSIC) && (remoteTrackEntities.isNotEmpty() || matchingMusicEntries.isNotEmpty())) ||
                     ((scopeFilter == SearchScopeFilter.ALL || scopeFilter == SearchScopeFilter.RSS_DISCOVERY) && displayedRssVideos.isNotEmpty()) ||
-                    ((scopeFilter == SearchScopeFilter.ALL || scopeFilter == SearchScopeFilter.ARTISTS) && remoteArtistResults.isNotEmpty()) ||
-                    ((scopeFilter == SearchScopeFilter.ALL || scopeFilter == SearchScopeFilter.ALBUMS) && remoteAlbumResults.isNotEmpty()) ||
+                    ((scopeFilter == SearchScopeFilter.ALL || scopeFilter == SearchScopeFilter.ARTISTS) && uniqueRemoteArtists.isNotEmpty()) ||
+                    ((scopeFilter == SearchScopeFilter.ALL || scopeFilter == SearchScopeFilter.ALBUMS) && uniqueRemoteAlbums.isNotEmpty()) ||
                     ((scopeFilter == SearchScopeFilter.ALL || scopeFilter == SearchScopeFilter.LOCAL) && localMatchingTracks.isNotEmpty())
 
             if (!hasAnyDisplayedItems && effectiveState != MusicSearchUiState.LOADING) {
@@ -974,7 +1104,7 @@ fun MusicSearchScreen(
                                 text = if (activeQuery.isNotBlank() || effectiveState == MusicSearchUiState.EMPTY_RESULTS) {
                                     "No tracks found"
                                 } else {
-                                    "Search YouTube Music, OPML Channels & Local Audio"
+                                    "Search Songs, Artists & Channels"
                                 },
                                 color = LabelPrimary,
                                 fontSize = 16.sp,
@@ -983,9 +1113,9 @@ fun MusicSearchScreen(
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
                                 text = if (activeQuery.isNotBlank()) {
-                                    "The YouTube Music provider and synchronized RSS catalog returned no matching results for \"$activeQuery\"."
+                                    "No matching songs or channels found for \"$activeQuery\"."
                                 } else {
-                                    "Enter an artist, song, or channel above, or tap a channel chip to synchronize live YouTube Atom RSS uploads."
+                                    "Enter an artist, song, or channel above, or tap any track in the feed to play in the background."
                                 },
                                 color = SecondaryTextZinc,
                                 fontSize = 13.sp
